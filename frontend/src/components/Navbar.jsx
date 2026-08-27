@@ -27,7 +27,7 @@ export default function Navbar() {
           <div className="p-1.5 sm:p-2 bg-indigo-600 rounded-lg shrink-0">
             <Scale className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
           </div>
-          <span className="truncate">MetrologyLens AI</span>
+          <span className="truncate">Metronox</span>
         </Link>
 
         {/* Desktop Navigation */}
