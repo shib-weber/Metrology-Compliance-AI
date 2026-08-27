@@ -1,30 +1,27 @@
-import { useEffect, useRef, useState } from 'react'
-import './Hero.css'
+import React, { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { Shield, Sparkles, Box, ArrowRight, Activity, Cpu } from 'lucide-react';
 
-const HERO_VIDEO_URL = '/hero.mp4'
-
-const STATS = [
-  { figure: '2M+', label: 'People', foot: 'Happy Customers' },
-  { figure: '1000+', label: 'Products', foot: 'Retail Market' },
-]
+const HERO_VIDEO_URL = '/hero.mp4'; // Replace or fallback smoothly
 
 export default function Hero() {
-  const videoRef = useRef(null)
-  const [ready, setReady] = useState(false)
+  const videoRef = useRef(null);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    const video = videoRef.current
-    if (!video) return
-    const play = video.play()
-    if (play?.catch) play.catch(() => {})
+    const video = videoRef.current;
+    if (!video) return;
+    const play = video.play();
+    if (play?.catch) play.catch(() => {});
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      video.pause()
-      setReady(true)
+      video.pause();
+      setReady(true);
     }
-  }, [])
+  }, []);
 
   return (
-    <section className="hero" id="top">
+    <section className="hero" id="overview">
+      {/* Background Video Media Scrim */}
       <div className="hero__media" aria-hidden="true">
         <video
           ref={videoRef}
@@ -40,37 +37,60 @@ export default function Hero() {
         <div className="hero__scrim" />
       </div>
 
+      {/* Main Center Content */}
       <div className="hero__body shell">
+
         <h1 className="hero__title">
-          <span className="hero__title-lead">Discover Beauty</span>
-          Made for Modern Elegance.
+          Automated Statutory Compliance &{' '}
+          <span className="hero__title-accent">3D Digital Twins</span>
         </h1>
-        <a className="btn btn--pearl hero__cta" href="#products">
-          Explore Our Products
-        </a>
+
+        <p className="hero__description">
+          Enforce Legal Metrology (Packaged Commodities) Rules, 2011 with real-time AI label scanning, automated PDF evidence issuance, and client-side WebGL twins.
+        </p>
+
+        <div className="hero__cta-group">
+          <Link to="/login" className="btn btn--primary">
+            Launch Platform <ArrowRight className="w-4 h-4" />
+          </Link>
+          <a href="#rules" className="btn btn--glass">
+            Explore Compliance Engine
+          </a>
+        </div>
       </div>
 
-      <div className="hero__foot shell">
-        <article className="card card--note">
-          <h2>Beauty That Speaks for Itself</h2>
-          <p>
-            From radiant skincare to flawless makeup, explore products designed for every skin
-            type and style.
+      {/* Glass Feature Cards */}
+      <div className="hero__cards shell" id="rules">
+        <article className="card--glass space-y-2.5">
+          <div className="p-2.5 bg-indigo-500/10 border border-indigo-500/20 rounded-xl w-fit">
+            <Shield className="w-6 h-6 text-indigo-400" />
+          </div>
+          <h3 className="font-semibold text-white text-base">Rules 2011 Audit Engine</h3>
+          <p className="text-xs sm:text-sm text-slate-400 font-light leading-relaxed">
+            Automated verification of MRP, Net Quantity, Unit Sale Price (USP), and Rule 7 mandatory font proportions.
           </p>
         </article>
 
-        <p className="hero__caption">Beauty glowinn in innerway of smile.</p>
+        <article className="card--glass space-y-2.5" id="twins">
+          <div className="p-2.5 bg-indigo-500/10 border border-indigo-500/20 rounded-xl w-fit">
+            <Box className="w-6 h-6 text-indigo-400" />
+          </div>
+          <h3 className="font-semibold text-white text-base">Client-Side 3D Digital Twin</h3>
+          <p className="text-xs sm:text-sm text-slate-400 font-light leading-relaxed">
+            0% GPU server load. Projects captured physical packaging panels directly into interactive WebGL meshes.
+          </p>
+        </article>
 
-        <div className="hero__stats">
-          {STATS.map((s) => (
-            <article key={s.figure} className="card card--stat">
-              <strong>{s.figure}</strong>
-              <span className="card__label">{s.label}</span>
-              <span className="card__foot">{s.foot}</span>
-            </article>
-          ))}
-        </div>
+        <article className="card--glass space-y-2.5" id="health">
+          <div className="p-2.5 bg-indigo-500/10 border border-indigo-500/20 rounded-xl w-fit">
+            <Activity className="w-6 h-6 text-indigo-400" />
+          </div>
+          <h3 className="font-semibold text-white text-base">Citizen Health Transparency</h3>
+          <p className="text-xs sm:text-sm text-slate-400 font-light leading-relaxed">
+            Instant hazard scoring on processing penalties, ultra-refined sugar, sodium thresholds, and harmful additives.
+          </p>
+        </article>
       </div>
     </section>
-  )
+  );
 }
