@@ -9,8 +9,8 @@ from core.config import settings
 
 # Explicit, verified models from your Groq project
 VISION_MODELS = [
+    "qwen/qwen3.8-27b",
     "qwen/qwen3.6-27b",
-    "qwen/qwen3.8-27b"
 ]
 
 TEXT_MODELS = [

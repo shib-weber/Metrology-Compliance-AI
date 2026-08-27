@@ -1,5 +1,17 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Camera, AlertCircle, Video, VideoOff, RefreshCw, Upload, Scan, Box, CircleDot, Layers } from 'lucide-react';
+import { 
+  Camera, 
+  AlertCircle, 
+  Video, 
+  VideoOff, 
+  RefreshCw, 
+  Upload, 
+  Scan, 
+  Box, 
+  CircleDot, 
+  Layers,
+  CheckCircle2
+} from 'lucide-react';
 
 const SHAPE_SCHEMAS = {
   box: [
@@ -37,6 +49,7 @@ export default function TurntableScanner({ onComplete }) {
   const fileInputRef = useRef(null);
 
   const panels = SHAPE_SCHEMAS[selectedShape] || SHAPE_SCHEMAS.box;
+  const currentPanel = panels[panelIdx] || panels[0];
 
   useEffect(() => {
     if (cameraActive && streamRef.current && videoRef.current) {
@@ -94,7 +107,7 @@ export default function TurntableScanner({ onComplete }) {
 
     canvas.toBlob((blob) => {
       if (!blob) return;
-      const file = new File([blob], `${panels[panelIdx].id}.jpg`, { type: 'image/jpeg' });
+      const file = new File([blob], `${currentPanel.id}.jpg`, { type: 'image/jpeg' });
       const url = URL.createObjectURL(blob);
       savePanel(file, url);
     }, 'image/jpeg', 0.98);
@@ -113,7 +126,7 @@ export default function TurntableScanner({ onComplete }) {
       const ctx = canvas.getContext('2d');
       ctx.drawImage(img, 0, 0);
       canvas.toBlob((blob) => {
-        const normalizedFile = new File([blob], `${panels[panelIdx].id}.jpg`, { type: 'image/jpeg' });
+        const normalizedFile = new File([blob], `${currentPanel.id}.jpg`, { type: 'image/jpeg' });
         const cleanUrl = URL.createObjectURL(blob);
         savePanel(normalizedFile, cleanUrl);
       }, 'image/jpeg', 0.98);
@@ -122,13 +135,12 @@ export default function TurntableScanner({ onComplete }) {
   };
 
   const savePanel = (file, url) => {
-    const currentId = panels[panelIdx].id;
+    const currentId = currentPanel.id;
     const updated = { ...captured, [currentId]: { file, url } };
     setCaptured(updated);
 
-    if (panelIdx < panels.length - 1) {
-      setPanelIdx(panelIdx + 1);
-    }
+    // Camera will stop so preview stays visible for current panel
+    if (cameraActive) stopCamera();
   };
 
   const executeBatchInspection = async (allPanels = captured) => {
@@ -164,7 +176,7 @@ export default function TurntableScanner({ onComplete }) {
         throw new Error(data.detail || 'Audit rejected by statutory inspection engine');
       }
 
-      print(data.clean_textures)
+      console.log(data.clean_textures);
       const cleanMap = data.clean_textures || {};
       const fallbackClean = cleanMap.front || Object.values(cleanMap)[0] || allPanels.front?.url;
 
@@ -186,131 +198,161 @@ export default function TurntableScanner({ onComplete }) {
     }
   };
 
+  const capturedCount = Object.keys(captured).length;
+  const currentCapture = captured[currentPanel.id];
+
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-2xl space-y-4">
-      <div className="flex justify-between items-center">
-        <h3 className="font-bold text-white text-sm flex items-center gap-2">
-          <Scan className="w-4 h-4 text-indigo-400" />
-          6-Axis Commodity Scanner
-        </h3>
-        <div className="flex gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs">
-          <button
-            type="button"
-            onClick={() => { setSelectedShape('box'); setPanelIdx(0); setCaptured({}); }}
-            className={`px-2 py-0.5 rounded font-medium flex items-center gap-1 transition ${selectedShape === 'box' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}
-          >
-            <Box className="w-3 h-3" /> Box
-          </button>
-          <button
-            type="button"
-            onClick={() => { setSelectedShape('cylinder'); setPanelIdx(0); setCaptured({}); }}
-            className={`px-2 py-0.5 rounded font-medium flex items-center gap-1 transition ${selectedShape === 'cylinder' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}
-          >
-            <CircleDot className="w-3 h-3" /> Cylinder
-          </button>
-          <button
-            type="button"
-            onClick={() => { setSelectedShape('pouch'); setPanelIdx(0); setCaptured({}); }}
-            className={`px-2 py-0.5 rounded font-medium flex items-center gap-1 transition ${selectedShape === 'pouch' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}
-          >
-            <Layers className="w-3 h-3" /> Pouch
-          </button>
+    <div className="w-full max-w-xl mx-auto bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-2xl space-y-4 text-slate-100 box-border">
+      
+      {/* Header & Shape Options */}
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center gap-2">
+          <Scan className="w-5 h-5 text-indigo-400 shrink-0" />
+          <div>
+            <h3 className="font-bold text-sm text-white">6-Axis Commodity Scanner</h3>
+            <p className="text-[11px] text-slate-400">Capture standard surface panels</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs">
+          {[
+            { id: 'box', label: 'Box', icon: Box },
+            { id: 'cylinder', label: 'Cylinder', icon: CircleDot },
+            { id: 'pouch', label: 'Pouch', icon: Layers }
+          ].map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => { setSelectedShape(id); setPanelIdx(0); setCaptured({}); }}
+              className={`py-1.5 px-2 rounded-lg font-medium flex items-center justify-center gap-1.5 transition text-xs ${
+                selectedShape === id ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Icon className="w-3.5 h-3.5" />
+              <span>{label}</span>
+            </button>
+          ))}
         </div>
       </div>
 
+      {/* Error Alert */}
       {errorMessage && (
-        <div className="p-3 bg-rose-950/50 border border-rose-900 rounded-xl text-rose-300 text-xs flex items-center gap-2">
+        <div className="p-3 bg-rose-950/60 border border-rose-800 rounded-xl text-rose-300 text-xs flex items-center gap-2">
           <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
           <span>{errorMessage}</span>
         </div>
       )}
 
-      {/* Viewport Frame */}
-      <div className="aspect-[4/3] bg-slate-950 border-2 border-slate-800 rounded-2xl relative overflow-hidden flex items-center justify-center">
+      {/* Main Viewport */}
+      <div className="w-full aspect-[4/3] bg-slate-950 border border-slate-800 rounded-xl relative overflow-hidden flex items-center justify-center">
+        
+        {/* Video stream layer */}
         <video
           ref={videoRef}
           autoPlay
           playsInline
           muted
-          className={`w-full h-full object-cover ${cameraActive ? 'block' : 'hidden'}`}
+          className={`absolute inset-0 w-full h-full object-cover ${cameraActive ? 'block' : 'hidden'}`}
         />
 
+        {/* Live Alignment Overlay */}
         {cameraActive && (
-          <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-            <div className="w-[55%] h-[80%] border-2 border-dashed border-emerald-400 rounded-xl shadow-[0_0_0_9999px_rgba(0,0,0,0.55)] flex flex-col justify-between p-3">
-              <div className="bg-emerald-600 text-white font-mono text-[10px] px-2 py-0.5 rounded w-fit uppercase font-bold">
-                ALIGN: {panels[panelIdx].label}
+          <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-4 z-10">
+            <div className="w-[65%] h-[85%] border-2 border-dashed border-emerald-400 rounded-xl shadow-[0_0_0_9999px_rgba(0,0,0,0.55)] flex flex-col justify-between p-2.5">
+              <div className="bg-emerald-600 text-white font-mono text-[9px] px-2 py-0.5 rounded uppercase font-bold w-fit">
+                ALIGN: {currentPanel.id}
               </div>
-              <div className="text-center text-[11px] font-semibold text-slate-200 bg-black/70 py-1 rounded backdrop-blur-sm">
-                Position face inside the green boundary & snap
+              <div className="text-center text-[10px] font-semibold text-slate-200 bg-black/70 py-1 rounded backdrop-blur-sm">
+                Keep panel inside guide
               </div>
             </div>
           </div>
         )}
 
-        {!cameraActive && captured[panels[panelIdx].id] && (
-          <img
-            src={captured[panels[panelIdx].id].url}
-            alt="Captured face preview"
-            className="w-full h-full object-contain p-2"
-          />
+        {/* Image Preview Layer */}
+        {!cameraActive && currentCapture && (
+          <div className="relative w-full h-full flex flex-col items-center justify-center p-2 z-10 bg-slate-950">
+            <img
+              src={currentCapture.url}
+              alt="Captured panel"
+              className="max-h-full max-w-full object-contain rounded-lg border border-slate-800"
+            />
+            <div className="absolute bottom-2 left-2 right-2 bg-emerald-950/80 border border-emerald-700/60 backdrop-blur-sm py-1 px-2 rounded text-[11px] text-emerald-300 flex items-center justify-center gap-1.5 font-medium">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span>{currentPanel.label} saved</span>
+            </div>
+          </div>
         )}
 
-        {!cameraActive && !captured[panels[panelIdx].id] && (
-          <div className="text-center p-6 space-y-2">
-            <Camera className="w-10 h-10 text-indigo-400 mx-auto animate-bounce" />
-            <p className="text-xs font-bold text-slate-200">{panels[panelIdx].label}</p>
-            <p className="text-[11px] text-slate-500">Capture or upload photo of this face</p>
+        {/* Empty Standby State */}
+        {!cameraActive && !currentCapture && (
+          <div className="w-full px-4 text-center flex flex-col items-center justify-center space-y-2 z-10">
+            <div className="p-3 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
+              <Camera className="w-6 h-6" />
+            </div>
+            <p className="text-xs font-semibold text-slate-200 text-center">{currentPanel.label}</p>
+            <p className="text-[11px] text-slate-500 text-center">Capture or upload this face</p>
           </div>
         )}
       </div>
 
-      {/* Face Indicators */}
-      <div className={`grid gap-1 ${panels.length === 6 ? 'grid-cols-6' : 'grid-cols-4'}`}>
-        {panels.map((p, i) => (
-          <button
-            key={p.id}
-            type="button"
-            onClick={() => setPanelIdx(i)}
-            className={`py-1.5 rounded-lg border text-[10px] font-bold uppercase transition flex flex-col items-center justify-center ${
-              captured[p.id]
-                ? 'bg-emerald-950/60 border-emerald-500 text-emerald-300'
-                : i === panelIdx
-                ? 'bg-indigo-900/60 border-indigo-400 text-indigo-200'
-                : 'bg-slate-950 border-slate-800 text-slate-500'
-            }`}
-          >
-            <span>{p.id.slice(0, 3)}</span>
-            {captured[p.id] && <span className="text-[9px] text-emerald-400">✓</span>}
-          </button>
-        ))}
+      {/* Panel Buttons */}
+      <div className="space-y-1.5">
+        <div className="flex justify-between items-center text-[11px] text-slate-400 px-1">
+          <span>Panels</span>
+          <span className="font-semibold text-slate-200">{capturedCount} / {panels.length}</span>
+        </div>
+
+        <div className={`grid gap-1.5 ${panels.length === 6 ? 'grid-cols-3 sm:grid-cols-6' : 'grid-cols-2 sm:grid-cols-4'}`}>
+          {panels.map((p, i) => {
+            const hasData = !!captured[p.id];
+            const active = i === panelIdx;
+            return (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => setPanelIdx(i)}
+                className={`py-2 px-2 rounded-lg border text-[11px] font-bold uppercase transition flex items-center justify-center gap-1 ${
+                  hasData
+                    ? 'bg-emerald-950/50 border-emerald-500/80 text-emerald-300'
+                    : active
+                    ? 'bg-indigo-600/30 border-indigo-500 text-indigo-200'
+                    : 'bg-slate-950 border-slate-800 text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                <span>{p.id}</span>
+                {hasData && <span className="text-emerald-400 text-xs">✓</span>}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      {/* Controls */}
-      <div className="grid grid-cols-2 gap-2">
+      {/* Capture Action Controls */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
         {!cameraActive ? (
           <button
             type="button"
             onClick={startCamera}
-            className="bg-indigo-600 hover:bg-indigo-500 text-white py-2.5 rounded-xl font-semibold text-xs flex items-center justify-center gap-1.5 transition"
+            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-2.5 rounded-xl font-medium text-xs flex items-center justify-center gap-1.5 transition"
           >
-            <Video className="w-3.5 h-3.5" /> Start Camera
+            <Video className="w-4 h-4" /> Start Camera
           </button>
         ) : (
           <div className="flex gap-1.5">
             <button
               type="button"
               onClick={snapCurrentView}
-              className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 rounded-xl font-semibold text-xs flex items-center justify-center gap-1.5 transition"
+              className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 rounded-xl font-medium text-xs flex items-center justify-center gap-1.5 transition"
             >
-              <Camera className="w-3.5 h-3.5" /> Snap {panels[panelIdx].id.toUpperCase()}
+              <Camera className="w-4 h-4" /> Snap {currentPanel.id.toUpperCase()}
             </button>
             <button
               type="button"
               onClick={stopCamera}
-              className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 rounded-xl text-xs transition"
+              className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 rounded-xl transition flex items-center justify-center"
             >
-              <VideoOff className="w-3.5 h-3.5" />
+              <VideoOff className="w-4 h-4" />
             </button>
           </div>
         )}
@@ -325,22 +367,25 @@ export default function TurntableScanner({ onComplete }) {
         <button
           type="button"
           onClick={() => fileInputRef.current.click()}
-          className="bg-slate-800 hover:bg-slate-700 text-slate-200 py-2.5 rounded-xl font-semibold text-xs flex items-center justify-center gap-1.5 transition"
+          className="w-full bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 py-2.5 rounded-xl font-medium text-xs flex items-center justify-center gap-1.5 transition"
         >
-          <Upload className="w-3.5 h-3.5" /> Upload File
+          <Upload className="w-4 h-4 text-slate-400" /> Upload File
         </button>
       </div>
 
-      {Object.keys(captured).length > 0 && (
-        <button
-          type="button"
-          onClick={() => executeBatchInspection()}
-          disabled={scanning}
-          className="w-full bg-indigo-600/30 hover:bg-indigo-600 border border-indigo-500/50 text-indigo-200 hover:text-white py-2.5 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-2"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${scanning ? 'animate-spin' : ''}`} />
-          {scanning ? 'Extracting Text Face-by-Face...' : `Scan & Audit ${Object.keys(captured).length} Captured Faces`}
-        </button>
+      {/* Batch Submit */}
+      {capturedCount > 0 && (
+        <div className="pt-1">
+          <button
+            type="button"
+            onClick={() => executeBatchInspection()}
+            disabled={scanning}
+            className="w-full bg-indigo-600/30 hover:bg-indigo-600 border border-indigo-500/50 text-indigo-200 hover:text-white py-2.5 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-2"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${scanning ? 'animate-spin' : ''}`} />
+            {scanning ? 'Extracting Text Face-by-Face...' : `Scan & Audit ${capturedCount} Captured Faces`}
+          </button>
+        </div>
       )}
     </div>
   );
