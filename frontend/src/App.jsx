@@ -8,6 +8,9 @@ import SignupPage from './pages/SignupPage';
 import CitizenDashboard from './pages/CitizenDashboard';
 import InspectorDashboard from './pages/InspectorDashboard';
 import ReportDetails from './pages/ReportDetails';
+import GovRulesPage from './pages/GovRulesPage';
+import DigitalTwinsPage from './pages/DigitalTwinsPage';
+import OverviewPage from './pages/OverviewPage';
 
 function ProtectedRoute({ children, requiredRole }) {
   const { user } = useAuth();
@@ -26,6 +29,9 @@ export default function App() {
             <Route path="/" element={<LandingPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/signup" element={<SignupPage />} />
+            <Route path="/rules" element={<GovRulesPage />} />
+            <Route path="/twins" element={<DigitalTwinsPage />} />
+            <Route path="/overview" element={<OverviewPage />} />
             <Route path="/citizen" element={
               <ProtectedRoute><CitizenDashboard /></ProtectedRoute>
             } />

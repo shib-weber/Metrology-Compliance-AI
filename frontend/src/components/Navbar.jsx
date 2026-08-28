@@ -12,17 +12,17 @@ import {
 } from 'lucide-react';
 
 const NAV_LINKS = [
-  { label: 'Overview', href: '/#overview' },
-  { label: 'Rules 2011 Engine', href: '/#rules' },
-  { label: '3D Digital Twins', href: '/#twins' },
-  { label: 'Citizen Portal', href: '/#health' }
+  { label: 'Home', href: '/' },
+  { label: 'Overview', href: '/overview' },
+  { label: 'Rules 2011 Engine', href: '/rules' },
+  { label: '3D Digital Twins', href: '/twins' },
 ];
 
 export default function Navbar() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const [active, setActive] = useState('Overview');
+  const [active, setActive] = useState('Home');
   const [open, setOpen] = useState(false);
 
   const isDashboardRoute = location.pathname.startsWith('/inspector') || 
