@@ -7,7 +7,7 @@ app = FastAPI(title=settings.PROJECT_NAME, version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173","metronox.vercel.app","*"],
+    allow_origins=["http://localhost:5173","https://metronox.vercel.app","*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
