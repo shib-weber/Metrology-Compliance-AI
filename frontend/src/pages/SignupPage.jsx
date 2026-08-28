@@ -185,7 +185,7 @@ export default function SignupPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-400 hover:to-indigo-500 active:scale-[0.99] disabled:opacity-50 disabled:pointer-events-none text-white font-semibold py-3 rounded-full text-sm transition-all duration-300 shadow-[0_8px_24px_rgba(99,102,241,0.45)] hover:shadow-[0_12px_30px_rgba(99,102,241,0.6)] flex items-center justify-center gap-2 mt-2"
+            className="w-full !m-5 bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-400 hover:to-indigo-500 active:scale-[0.99] disabled:opacity-50 disabled:pointer-events-none text-white font-semibold py-3 rounded-full text-sm transition-all duration-300 shadow-[0_8px_24px_rgba(99,102,241,0.45)] hover:shadow-[0_12px_30px_rgba(99,102,241,0.6)] flex items-center justify-center gap-2 mt-2"
           >
             {loading ? (
               <>
