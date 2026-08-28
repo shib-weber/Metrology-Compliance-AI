@@ -2,6 +2,8 @@ import io
 import gc
 import json
 import base64
+import cv2
+import numpy as np
 from typing import List, Optional
 from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException, status
 from fastapi.responses import Response
@@ -20,6 +22,69 @@ from engine.nutri_engine import calculate_nutri_health
 from engine.mesh_reconstructor import DigitalTwin3DGenerator
 
 router = APIRouter(prefix="/scan", tags=["Scan"])
+
+
+def enhance_image_for_ocr(image_bytes: bytes) -> bytes:
+    """
+    Applies adaptive contrast equalization (CLAHE) and de-noising 
+    to maximize text extraction clarity on live camera captures.
+    """
+    try:
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if img is None:
+            return image_bytes
+
+        # Convert to LAB color space to equalize luminance channel
+        lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+        l, a, b = cv2.split(lab)
+        clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
+        cl = clahe.apply(l)
+        limg = cv2.merge((cl, a, b))
+        enhanced = cv2.cvtColor(limg, cv2.COLOR_LAB2BGR)
+
+        # Encode back to high-quality JPEG
+        _, buffer = cv2.imencode(".jpg", enhanced, [int(cv2.IMWRITE_JPEG_QUALITY), 98])
+        return buffer.tobytes()
+    except Exception:
+        return image_bytes
+
+
+def perform_multi_orientation_ocr(image_bytes: bytes, panel_id: str) -> str:
+    """
+    Runs OCR on the normal orientation. If text density is low (e.g. rotated top flap),
+    rotates 90/180/270 degrees to guarantee statutory text capture.
+    """
+    enhanced_bytes = enhance_image_for_ocr(image_bytes)
+    
+    # 1. Primary pass
+    res = extract_raw_text_single_image(enhanced_bytes, panel_id)
+    text = str(res[0]) if isinstance(res, tuple) else str(res)
+    
+    # If standard pass found substantial text (MRP, Batch, etc.), return immediately
+    keywords = ["mrp", "rs", "batch", "pkg", "mfg", "exp", "net", "qty", "date"]
+    if any(k in text.lower() for k in keywords) and len(text.strip()) > 15:
+        return text
+
+    # 2. Rotational fallback if text is sideways (common in mobile turntable snaps)
+    nparr = np.frombuffer(enhanced_bytes, np.uint8)
+    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    if img is None:
+        return text
+
+    best_text = text
+    for angle in [cv2.ROTATE_90_CLOCKWISE, cv2.ROTATE_180, cv2.ROTATE_90_COUNTERCLOCKWISE]:
+        rotated = cv2.rotate(img, angle)
+        _, rot_buf = cv2.imencode(".jpg", rotated, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
+        rot_res = extract_raw_text_single_image(rot_buf.tobytes(), panel_id)
+        rot_text = str(rot_res[0]) if isinstance(rot_res, tuple) else str(rot_res)
+        
+        if len(rot_text.strip()) > len(best_text.strip()):
+            best_text = rot_text
+        if any(k in rot_text.lower() for k in keywords):
+            return rot_text
+
+    return best_text
 
 
 @router.post("/analyze", response_model=ScanResponse)
@@ -43,7 +108,6 @@ async def analyze_commodity(
     panel_extracted_texts = {}
     primary_vision_meta = None
 
-    # 1. Process each panel sequentially with aggressive buffer cleanup
     for idx, file in enumerate(files):
         panel_id = parsed_ids[idx] if idx < len(parsed_ids) else f"panel_{idx + 1}"
         raw_bytes = await file.read()
@@ -65,16 +129,10 @@ async def analyze_commodity(
             if primary_vision_meta is None:
                 primary_vision_meta = {"shape_type": "box", "pdp_area_sq_cm": 100.0}
 
-        # Safe string text extraction
-        raw_ocr_result = extract_raw_text_single_image(cropped_bytes, panel_id)
-        if isinstance(raw_ocr_result, tuple):
-            extracted_text = str(raw_ocr_result[0])
-        else:
-            extracted_text = str(raw_ocr_result)
-
+        # Multi-orientation adaptive OCR pipeline
+        extracted_text = perform_multi_orientation_ocr(cropped_bytes, panel_id)
         panel_extracted_texts[panel_id] = extracted_text
 
-        # Explicitly release image byte buffers after each iteration
         del raw_bytes, cropped_bytes
         gc.collect()
 
