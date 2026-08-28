@@ -20,14 +20,13 @@ else:
 if "sqlite" in SQLALCHEMY_DATABASE_URL:
     engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
 else:
-    # Optimized engine for Supabase Pooler over Render
     engine = create_engine(
         SQLALCHEMY_DATABASE_URL,
-        pool_size=3,
-        max_overflow=5,
+        pool_size=2,
+        max_overflow=3,
         pool_pre_ping=True,
         pool_recycle=300,
-        connect_args={"connect_timeout": 15}
+        connect_args={"connect_timeout": 5}
     )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -77,7 +76,11 @@ class DBInspection(Base):
     owner = relationship("DBUser", back_populates="inspections")
 
 
-Base.metadata.create_all(bind=engine)
+# Auto-create tables gracefully without blocking server boot
+try:
+    Base.metadata.create_all(bind=engine)
+except Exception as e:
+    print(f"[DB Startup Warning]: {e}")
 
 
 def get_db():
