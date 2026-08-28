@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { API_BASE_URL } from '../config/api';
 import { ShieldCheck, Lock, Mail, AlertCircle, ArrowRight, Loader2, Sparkles } from 'lucide-react';
 
 const HERO_VIDEO_URL = '/hero.mp4';
@@ -38,7 +39,7 @@ export default function LoginPage() {
 
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:8000/api/auth/login', {
+      const res = await fetch(`${API_BASE_URL}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim().toLowerCase(), password })

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { ShieldCheck, UserCheck, AlertCircle, Lock, Mail, ArrowRight, Loader2, Sparkles } from 'lucide-react';
+import { API_BASE_URL } from '../config/api';
 
 const HERO_VIDEO_URL = '/hero.mp4';
 
@@ -45,7 +46,7 @@ export default function SignupPage() {
     setLoading(true);
 
     try {
-      const res = await fetch('http://localhost:8000/api/auth/signup', {
+      const res = await fetch(`${API_BASE_URL}/api/auth/signup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim().toLowerCase(), password, role })

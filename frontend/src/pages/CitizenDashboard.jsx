@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import TurntableScanner from '../components/TurntableScanner';
 import ProductViewer3D from '../components/ProductViewer3D';
 import HealthBadge from '../components/HealthBadge';
+import { API_BASE_URL } from '../config/api';
 import { useAuth } from '../context/AuthContext';
 import { 
   ShieldCheck, 
@@ -42,7 +43,7 @@ export default function CitizenDashboard() {
 
     setLoadingHistory(true);
     try {
-      const res = await fetch(`http://localhost:8000/api/reports/list?email=${encodeURIComponent(userEmail)}&role=citizen`);
+      const res = await fetch(`${API_BASE_URL}/api/reports/list?email=${encodeURIComponent(userEmail)}&role=citizen`);
       const list = await res.json();
       setPersonalHistory(Array.isArray(list) ? list : []);
     } catch (err) {
@@ -59,7 +60,7 @@ export default function CitizenDashboard() {
   const handleForwardToInspector = async (reportId) => {
     setReportingId(reportId);
     try {
-      const res = await fetch('http://localhost:8000/api/reports/flag', {
+      const res = await fetch(`${API_BASE_URL}/api/reports/flag`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -80,7 +81,7 @@ export default function CitizenDashboard() {
   };
 
   const handleDownloadPDF = (reportId) => {
-    window.open(`http://localhost:8000/api/reports/${reportId}/pdf`, '_blank');
+    window.open(`${API_BASE_URL}/api/reports/${reportId}/pdf`, '_blank');
   };
 
   const panelTexts = data?.panel_texts || data?.raw_ocr_logs || {};

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { API_BASE_URL } from '../config/api';
 import { 
   ArrowLeft, 
   Download, 
@@ -24,7 +25,7 @@ export default function ReportDetails() {
   useEffect(() => {
     const fetchReport = async () => {
       try {
-        const res = await fetch('http://localhost:8000/api/reports/list');
+        const res = await fetch(`${API_BASE_URL}/api/reports/list`);
         const list = await res.json();
         const found = list.find((item) => String(item.id) === String(reportId));
         setReport(found);
@@ -38,7 +39,7 @@ export default function ReportDetails() {
   }, [reportId]);
 
   const handleDownloadPDF = () => {
-    window.open(`http://localhost:8000/api/reports/${reportId}/pdf`, '_blank');
+    window.open(`${API_BASE_URL}/api/reports/${reportId}/pdf`, '_blank');
   };
 
   if (loading) {

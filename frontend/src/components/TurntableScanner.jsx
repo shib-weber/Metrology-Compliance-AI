@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { API_BASE_URL } from '../config/api';
 import { 
   Camera, 
   AlertCircle, 
@@ -172,7 +173,7 @@ export default function TurntableScanner({ onComplete, email }) {
 
     try {
       // 1. Audit Analysis
-      const res = await fetch('http://localhost:8000/api/scan/analyze', {
+      const res = await fetch(`${API_BASE_URL}/api/scan/analyze`, {
         method: 'POST',
         body: fd
       });
@@ -188,7 +189,7 @@ export default function TurntableScanner({ onComplete, email }) {
       if (primaryFile) {
         const glbFd = new FormData();
         glbFd.append('file', primaryFile);
-        const glbRes = await fetch('http://localhost:8000/api/scan/generate-digital-twin', {
+        const glbRes = await fetch(`${API_BASE_URL}/api/scan/generate-digital-twin`, {
           method: 'POST',
           body: glbFd
         });

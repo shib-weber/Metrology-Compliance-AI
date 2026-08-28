@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import TurntableScanner from '../components/TurntableScanner';
 import ProductViewer3D from '../components/ProductViewer3D';
 import HealthBadge from '../components/HealthBadge';
+import { API_BASE_URL } from '../config/api';
 import { useAuth } from '../context/AuthContext';
 import { 
   ShieldCheck, 
@@ -49,7 +50,7 @@ export default function InspectorDashboard() {
     setLoadingHistory(true);
     try {
       // Fetch role-isolated enforcement queue
-      const res = await fetch(`http://localhost:8000/api/reports/list?email=${encodeURIComponent(inspectorEmail)}&role=inspector`);
+      const res = await fetch(`${API_BASE_URL}/api/reports/list?email=${encodeURIComponent(inspectorEmail)}&role=inspector`);
       const json = await res.json();
       setHistory(Array.isArray(json) ? json : []);
     } catch (err) {
@@ -66,7 +67,7 @@ export default function InspectorDashboard() {
   const handleApplyAction = async (reportId) => {
     try {
       const inspectorEmail = user?.email || localStorage.getItem('user_email') || 'inspector@metronox.gov.in';
-      const res = await fetch(`http://localhost:8000/api/reports/${reportId}/action`, {
+      const res = await fetch(`${API_BASE_URL}/api/reports/${reportId}/action`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -87,7 +88,7 @@ export default function InspectorDashboard() {
 
   const handleDownloadPDF = (reportId) => {
     if (!reportId) return;
-    window.open(`http://localhost:8000/api/reports/${reportId}/pdf`, '_blank');
+    window.open(`${API_BASE_URL}/api/reports/${reportId}/pdf`, '_blank');
   };
 
   // Filter queue strictly to Citizen Reports OR Inspector's Own Scans
