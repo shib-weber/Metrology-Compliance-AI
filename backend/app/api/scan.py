@@ -1,3 +1,5 @@
+import io
+import gc
 import json
 import base64
 from typing import List, Optional
@@ -11,8 +13,7 @@ from engine.vision_preprocessor import segment_and_analyze_shape, clean_and_crop
 from engine.font_ratio_auditor import audit_font_and_pdp_compliance
 from engine.ocr_engine import (
     extract_raw_text_single_image,
-    synthesize_statutory_declarations,
-    extract_label_data
+    synthesize_statutory_declarations
 )
 from engine.rules_2011 import run_metrology_audit
 from engine.nutri_engine import calculate_nutri_health
@@ -35,30 +36,23 @@ async def analyze_commodity(
             detail="No package image files uploaded."
         )
 
-    # Resolve submitter email (handles either email or username form parameter)
     submitter_email = (email or username or "anonymous").strip().lower()
-
     parsed_ids = [p.strip().lower() for p in panel_ids.split(",") if p.strip()]
+
     cleaned_textures = {}
     panel_extracted_texts = {}
-    primary_cropped_bytes = None
     primary_vision_meta = None
-    primary_raw_bytes = None
 
-    # 1. Clean background and extract OCR per face
+    # 1. Process each panel sequentially with aggressive buffer cleanup
     for idx, file in enumerate(files):
         panel_id = parsed_ids[idx] if idx < len(parsed_ids) else f"panel_{idx + 1}"
         raw_bytes = await file.read()
         if not raw_bytes:
             continue
 
-        if primary_raw_bytes is None or panel_id == "front":
-            primary_raw_bytes = raw_bytes
-
         try:
-            if panel_id == "front" or primary_cropped_bytes is None:
+            if panel_id == "front" or primary_vision_meta is None:
                 cropped_bytes, clean_b64, vision_meta, _ = segment_and_analyze_shape(raw_bytes)
-                primary_cropped_bytes = cropped_bytes
                 primary_vision_meta = vision_meta
             else:
                 cropped_bytes, clean_b64 = clean_and_crop_panel(raw_bytes)
@@ -68,8 +62,10 @@ async def analyze_commodity(
             cropped_bytes = raw_bytes
             b64_str = base64.b64encode(raw_bytes).decode("utf-8")
             cleaned_textures[panel_id] = f"data:image/jpeg;base64,{b64_str}"
+            if primary_vision_meta is None:
+                primary_vision_meta = {"shape_type": "box", "pdp_area_sq_cm": 100.0}
 
-        # Safe OCR text extraction (ensures text is always a pure string, not a tuple)
+        # Safe string text extraction
         raw_ocr_result = extract_raw_text_single_image(cropped_bytes, panel_id)
         if isinstance(raw_ocr_result, tuple):
             extracted_text = str(raw_ocr_result[0])
@@ -78,12 +74,12 @@ async def analyze_commodity(
 
         panel_extracted_texts[panel_id] = extracted_text
 
-    # 2. Synthesize multi-face statutory declarations
-    extracted = synthesize_statutory_declarations(panel_extracted_texts)
+        # Explicitly release image byte buffers after each iteration
+        del raw_bytes, cropped_bytes
+        gc.collect()
 
-    if not extracted or not extracted.get("is_legible", True):
-        if primary_cropped_bytes:
-            extracted = extract_label_data(primary_cropped_bytes)
+    # 2. Synthesize declarations from extracted text corpus
+    extracted = synthesize_statutory_declarations(panel_extracted_texts) or {}
 
     # 3. Rule 7 Font & PDP Ratio Check
     font_audit = audit_font_and_pdp_compliance(
@@ -91,43 +87,48 @@ async def analyze_commodity(
         detected_font_mm=extracted.get("measured_font_height_mm", 2.0)
     )
 
-    # 4. Statutory Rules Evaluation (Legal Metrology Rules, 2011)
+    # 4. Statutory Rules Evaluation
     compliance = run_metrology_audit(extracted)
     if font_audit.get("font_compliance_status") == "NON-COMPLIANT" and font_audit.get("violation"):
-        compliance["violations"].append(font_audit["violation"])
+        compliance.setdefault("violations", []).append(font_audit["violation"])
         compliance["violations_count"] = len(compliance["violations"])
         compliance["compliance_score"] = max(0, compliance.get("compliance_score", 100) - 15)
         compliance["status"] = "NON-COMPLIANT"
 
-    # 5. Nutrition Score
+    # 5. Nutrition Evaluation
     nutrition_info = extracted.get("nutrition", {})
     health = calculate_nutri_health(nutrition_info) if nutrition_info.get("is_applicable") else None
     product_name = extracted.get("product_name") or "Packaged Commodity"
 
-    # 6. Build and persist database record to Supabase
-    db_item = DBInspection(
-        product_name=product_name,
-        category=extracted.get("category", "NON_FOOD"),
-        status=compliance.get("status", "NON-COMPLIANT"),
-        compliance_score=compliance.get("compliance_score", 0),
-        health_score=health["health_score"] if health else 0,
-        violations_json=json.dumps(compliance.get("violations", [])),
-        compliances_json=json.dumps(compliance.get("compliances", [])),
-        raw_declarations_json=json.dumps(extracted),
-        panel_texts_json=json.dumps(panel_extracted_texts),
-        textures_json=json.dumps(cleaned_textures),
-        font_audit_json=json.dumps(font_audit),
-        created_by=submitter_email,
-        flagged_for_review=(compliance.get("status") == "NON-COMPLIANT")
-    )
-    db.add(db_item)
-    db.commit()
-    db.refresh(db_item)
+    # 6. Database Persistence
+    try:
+        db_item = DBInspection(
+            product_name=product_name,
+            category=extracted.get("category", "NON_FOOD"),
+            status=compliance.get("status", "NON-COMPLIANT"),
+            compliance_score=compliance.get("compliance_score", 0),
+            health_score=health["health_score"] if health else 0,
+            violations_json=json.dumps(compliance.get("violations", [])),
+            compliances_json=json.dumps(compliance.get("compliances", [])),
+            raw_declarations_json=json.dumps(extracted),
+            panel_texts_json=json.dumps(panel_extracted_texts),
+            textures_json=json.dumps(cleaned_textures),
+            font_audit_json=json.dumps(font_audit),
+            created_by=submitter_email,
+            flagged_for_review=(compliance.get("status") == "NON-COMPLIANT")
+        )
+        db.add(db_item)
+        db.commit()
+        db.refresh(db_item)
+        saved_id = db_item.id
+    except Exception as e:
+        db.rollback()
+        print(f"[DB Warning] Could not persist scan record: {e}")
+        saved_id = None
 
-    # 7. Return complete ScanResponse payload conforming strictly to schemas.py
     return {
-        "id": db_item.id,
-        "product_name": db_item.product_name,
+        "id": saved_id,
+        "product_name": product_name,
         "category": extracted.get("category", "NON_FOOD"),
         "panel_texts": panel_extracted_texts,
         "declarations_summary": extracted,
@@ -140,19 +141,19 @@ async def analyze_commodity(
         "textures": cleaned_textures,
         "clean_textures": cleaned_textures,
         "geometry": primary_vision_meta.get("shape_type", "box") if primary_vision_meta else "box",
-        "created_by": db_item.created_by,
-        "flagged_for_review": db_item.flagged_for_review,
-        "inspector_action": db_item.inspector_action
+        "created_by": submitter_email,
+        "flagged_for_review": (compliance.get("status") == "NON-COMPLIANT"),
+        "inspector_action": "PENDING"
     }
 
 
 @router.post("/generate-digital-twin")
 async def generate_digital_twin(file: UploadFile = File(...)):
-    """
-    Builds and returns a customized 3D GLB model conforming to the package silhouette.
-    """
     raw_bytes = await file.read()
     glb_data = DigitalTwin3DGenerator.generate_mesh_glb(raw_bytes)
+    del raw_bytes
+    gc.collect()
+
     return Response(
         content=glb_data,
         media_type="model/gltf-binary",
