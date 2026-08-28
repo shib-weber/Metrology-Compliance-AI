@@ -1,82 +1,119 @@
-import React, { useRef, useMemo, Suspense } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls, Stage, useGLTF, Center } from '@react-three/drei';
+import React, { useState, useEffect, Suspense, useMemo } from 'react';
+import { Canvas } from '@react-three/fiber';
+import { OrbitControls, Stage, Center } from '@react-three/drei';
 import * as THREE from 'three';
 
-function GLBDigitalTwin({ glbUrl }) {
-  const { scene } = useGLTF(glbUrl);
-  const meshRef = useRef();
+function BoxMesh({ textures }) {
+  const [loadedTextures, setLoadedTextures] = useState({});
 
-  useFrame((_, delta) => {
-    if (meshRef.current) {
-      meshRef.current.rotation.y += delta * 0.35;
-    }
-  });
+  useEffect(() => {
+    if (!textures) return;
+    let isMounted = true;
+    const loader = new THREE.TextureLoader();
 
-  return <primitive ref={meshRef} object={scene} />;
-}
+    const order = ['right', 'left', 'top', 'bottom', 'front', 'back'];
 
-function StandardParametricMesh({ textures, geometryType = 'box' }) {
-  const meshRef = useRef();
-  const textureLoader = useMemo(() => new THREE.TextureLoader(), []);
+    order.forEach((key) => {
+      const src =
+        textures[key] ||
+        textures[key.toLowerCase()] ||
+        textures[key.toUpperCase()] ||
+        (typeof textures[key] === 'object' ? textures[key]?.url : null);
+
+      if (src && typeof src === 'string' && src.length > 50) {
+        loader.load(
+          src,
+          (tex) => {
+            if (!isMounted) return;
+            tex.colorSpace = THREE.SRGBColorSpace;
+            tex.wrapS = THREE.ClampToEdgeWrapping;
+            tex.wrapT = THREE.ClampToEdgeWrapping;
+            tex.generateMipmaps = true;
+            tex.minFilter = THREE.LinearMipmapLinearFilter;
+            tex.magFilter = THREE.LinearFilter;
+            tex.needsUpdate = true;
+
+            setLoadedTextures((prev) => ({
+              ...prev,
+              [key]: tex
+            }));
+          },
+          undefined,
+          (err) => {
+            console.warn(`Failed to load texture for panel: ${key}`, err);
+          }
+        );
+      }
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [textures]);
 
   const materials = useMemo(() => {
-    const faceKeys = ['right', 'left', 'top', 'bottom', 'front', 'back'];
-    return faceKeys.map((face) => {
-      const src = textures?.[face]?.url || textures?.[face] || '';
-      if (!src) {
-        return new THREE.MeshStandardMaterial({ color: '#0f172a', roughness: 0.6 });
+    const order = ['right', 'left', 'top', 'bottom', 'front', 'back'];
+    return order.map((key) => {
+      const tex = loadedTextures[key];
+      if (tex) {
+        return new THREE.MeshStandardMaterial({
+          map: tex,
+          roughness: 0.35,
+          metalness: 0.1,
+          side: THREE.FrontSide
+        });
       }
-      const tex = textureLoader.load(src);
-      tex.colorSpace = THREE.SRGBColorSpace;
-      return new THREE.MeshStandardMaterial({ map: tex, roughness: 0.3, metalness: 0.05 });
+      return new THREE.MeshStandardMaterial({
+        color: '#1e293b',
+        roughness: 0.85,
+        metalness: 0.05
+      });
     });
-  }, [textures, textureLoader]);
-
-  useFrame((_, delta) => {
-    if (meshRef.current) {
-      meshRef.current.rotation.y += delta * 0.35;
-    }
-  });
+  }, [loadedTextures]);
 
   return (
-    <mesh ref={meshRef} material={materials} castShadow receiveShadow>
-      {geometryType === 'cylinder' ? (
-        <cylinderGeometry args={[1, 1, 2.5, 32]} />
-      ) : geometryType === 'pouch' ? (
-        <boxGeometry args={[1.6, 2.4, 0.4]} />
-      ) : (
-        <boxGeometry args={[1.5, 2.2, 1.0]} />
-      )}
+    <mesh castShadow receiveShadow material={materials}>
+      <boxGeometry args={[2.2, 3.2, 1.4]} />
     </mesh>
   );
 }
 
-export default function ProductViewer3D({ textures, geometryType = 'box', glbUrl = null }) {
-  return (
-    <div className="w-full h-80 bg-slate-950 rounded-2xl overflow-hidden border border-slate-800 shadow-2xl relative">
-      <Canvas camera={{ position: [0, 0, 4.5], fov: 45 }}>
-        <ambientLight intensity={0.7} />
-        <directionalLight position={[5, 10, 5]} intensity={1.2} />
-        
-        <Suspense fallback={null}>
-          <Stage intensity={0.6} environment="city" adjustCamera={false}>
-            {glbUrl ? (
-              <Center>
-                <GLBDigitalTwin glbUrl={glbUrl} />
-              </Center>
-            ) : (
-              <StandardParametricMesh textures={textures} geometryType={geometryType} />
-            )}
-          </Stage>
-        </Suspense>
-        
-        <OrbitControls enableZoom={true} enablePan={false} autoRotate={false} />
-      </Canvas>
+export default function ProductViewer3D({ textures, geometryType = 'box' }) {
+  // Normalize incoming texture dictionaries
+  const normalizedTextures = useMemo(() => {
+    if (!textures || typeof textures !== 'object') return {};
+    const out = {};
+    Object.entries(textures).forEach(([k, v]) => {
+      const val = typeof v === 'object' && v?.url ? v.url : v;
+      if (val) {
+        out[k.toLowerCase()] = val;
+      }
+    });
+    return out;
+  }, [textures]);
 
-      <div className="absolute bottom-2 right-3 text-[10px] font-mono text-slate-500 bg-black/60 px-2 py-0.5 rounded backdrop-blur-sm pointer-events-none">
-        Drag to inspect 360°
-      </div>
+  return (
+    <div className="w-full h-64 sm:h-72 rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 relative shadow-inner">
+      <Canvas
+        shadows
+        camera={{ position: [0, 0, 5], fov: 45 }}
+        gl={{ preserveDrawingBuffer: true, antialias: true, powerPreference: 'default' }}
+      >
+        <Suspense fallback={null}>
+          <Stage environment="city" intensity={0.65} adjustCamera={false}>
+            <Center>
+              <BoxMesh textures={normalizedTextures} />
+            </Center>
+          </Stage>
+          <OrbitControls
+            autoRotate
+            autoRotateSpeed={1.5}
+            enablePan={false}
+            maxDistance={8}
+            minDistance={2.5}
+          />
+        </Suspense>
+      </Canvas>
     </div>
   );
 }

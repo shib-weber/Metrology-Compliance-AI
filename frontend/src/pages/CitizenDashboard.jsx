@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import TurntableScanner from '../components/TurntableScanner';
 import ProductViewer3D from '../components/ProductViewer3D';
 import HealthBadge from '../components/HealthBadge';
+import { useAuth } from '../context/AuthContext';
 import { 
   ShieldCheck, 
   ShieldAlert, 
@@ -16,89 +17,242 @@ import {
   Globe2, 
   PhoneCall, 
   CheckCircle2, 
-  AlertTriangle,
-  FileCheck2,
-  AlertOctagon
+  AlertTriangle, 
+  FileCheck2, 
+  AlertOctagon, 
+  History, 
+  Send, 
+  Download, 
+  RefreshCw, 
+  Check 
 } from 'lucide-react';
 
 export default function CitizenDashboard() {
+  const { user } = useAuth();
   const [data, setData] = useState(null);
   const [activeTab, setActiveTab] = useState('all');
+  const [personalHistory, setPersonalHistory] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [reportingId, setReportingId] = useState(null);
+  const [reportSuccess, setReportSuccess] = useState('');
 
-  // Normalize backend field names
+  const fetchPersonalHistory = async () => {
+    const userEmail = user?.email || localStorage.getItem('user_email');
+    if (!userEmail) return;
+
+    setLoadingHistory(true);
+    try {
+      const res = await fetch(`http://localhost:8000/api/reports/list?email=${encodeURIComponent(userEmail)}&role=citizen`);
+      const list = await res.json();
+      setPersonalHistory(Array.isArray(list) ? list : []);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchPersonalHistory();
+  }, [user]);
+
+  const handleForwardToInspector = async (reportId) => {
+    setReportingId(reportId);
+    try {
+      const res = await fetch('http://localhost:8000/api/reports/flag', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          report_id: reportId, 
+          notes: 'Citizen reported statutory violation to Legal Metrology Inspectorate.' 
+        })
+      });
+      if (res.ok) {
+        setReportSuccess(`Scan #${reportId} successfully reported to Enforcement Officers!`);
+        fetchPersonalHistory();
+        setTimeout(() => setReportSuccess(''), 5000);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setReportingId(null);
+    }
+  };
+
+  const handleDownloadPDF = (reportId) => {
+    window.open(`http://localhost:8000/api/reports/${reportId}/pdf`, '_blank');
+  };
+
   const panelTexts = data?.panel_texts || data?.raw_ocr_logs || {};
   const declarations = data?.declarations_summary || data?.raw_declarations || {};
-  const compliance = data?.compliance || { 
-    status: 'PENDING', 
-    compliance_score: 0, 
-    violations: [], 
-    compliances: [] 
-  };
+  const compliance = data?.compliance || { status: 'PENDING', compliance_score: 0, violations: [], compliances: [] };
   const panelKeys = Object.keys(panelTexts);
-
   const passedRules = compliance.compliances || [];
   const failedRules = compliance.violations || [];
 
   return (
-    <div className="max-w-7xl mx-auto p-6 grid grid-cols-1 lg:grid-cols-12 gap-8">
-      {/* Left Column: Scanner & 3D Digital Twin */}
+    <div className="max-w-7xl mx-auto p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8">
+      {/* Left Column: Scanner, 3D Twin & Personal Log */}
       <div className="lg:col-span-5 space-y-6">
         <TurntableScanner 
           onComplete={(res) => {
             setData(res);
             setActiveTab('all');
+            fetchPersonalHistory();
           }} 
         />
 
-        {data?.textures && (
-          <div>
-            <div className="flex justify-between items-center mb-2 px-1">
-              <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                Product Digital Twin
+        {(data?.textures || data?.clean_textures) && (
+          <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl space-y-3 shadow-xl">
+            <div className="flex justify-between items-center px-1">
+              <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                <Layers className="w-3.5 h-3.5 text-indigo-400" /> 3D Digital Twin Evidence
               </h4>
-              <span className="text-[11px] text-indigo-400 font-mono font-bold uppercase">
-                Shape: {data.geometry || 'Box'}
+              <span className="text-[11px] font-mono text-indigo-400 font-bold uppercase bg-indigo-950/60 border border-indigo-800/60 px-2 py-0.5 rounded">
+                {data.geometry || 'Box'}
               </span>
             </div>
+            
             <ProductViewer3D
-              textures={data.textures}
+              textures={data.textures || data.clean_textures}
               geometryType={data.geometry || 'box'}
-              meshDims={data.mesh_dims}
             />
           </div>
         )}
+
+        {/* Personal Scan History */}
+        <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-xl space-y-4">
+          <div className="flex justify-between items-center">
+            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+              <History className="w-4 h-4 text-emerald-400" />
+              My Audit History ({personalHistory.length})
+            </h3>
+            <button 
+              onClick={fetchPersonalHistory}
+              className="text-slate-400 hover:text-slate-200 transition"
+              title="Refresh my history"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loadingHistory ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
+
+          {reportSuccess && (
+            <div className="p-3 bg-emerald-950/80 border border-emerald-500/50 rounded-xl text-emerald-300 text-xs flex items-center gap-2">
+              <Check className="w-4 h-4 text-emerald-400" />
+              <span>{reportSuccess}</span>
+            </div>
+          )}
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs text-slate-300">
+              <thead className="bg-slate-950 text-slate-400 uppercase font-mono border-b border-slate-800 text-[10px]">
+                <tr>
+                  <th className="p-2">Item</th>
+                  <th className="p-2">Verdict</th>
+                  <th className="p-2">Action Taken</th>
+                  <th className="p-2 text-right">Options</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/70">
+                {personalHistory.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="p-4 text-center text-slate-500 text-xs">
+                      No inspections scanned yet.
+                    </td>
+                  </tr>
+                ) : (
+                  personalHistory.slice(0, 5).map((h) => (
+                    <tr key={h.id} className="hover:bg-slate-950/50 transition">
+                      <td className="p-2 font-semibold text-white max-w-[100px] truncate">{h.product_name}</td>
+                      <td className="p-2">
+                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                          h.status === 'COMPLIANT' 
+                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
+                            : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                        }`}>
+                          {h.status}
+                        </span>
+                      </td>
+                      <td className="p-2 font-mono text-[10px]">
+                        <span className={`px-1.5 py-0.5 rounded font-bold ${
+                          h.inspector_action === 'NOTICE_ISSUED' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' :
+                          h.inspector_action === 'SEIZED' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40' :
+                          h.inspector_action === 'RESOLVED' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' :
+                          'bg-slate-800 text-slate-400'
+                        }`}>
+                          {h.inspector_action || 'PENDING'}
+                        </span>
+                      </td>
+                      <td className="p-2 text-right space-x-1.5">
+                        <button
+                          onClick={() => handleDownloadPDF(h.id)}
+                          className="text-slate-400 hover:text-white p-1 rounded hover:bg-slate-800 transition"
+                          title="Download Notice"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                        </button>
+                        {h.status !== 'COMPLIANT' && !h.flagged_for_review && (
+                          <button
+                            onClick={() => handleForwardToInspector(h.id)}
+                            disabled={reportingId === h.id}
+                            className="text-indigo-400 hover:text-indigo-300 p-1 rounded hover:bg-indigo-950 transition"
+                            title="Report Violation to Inspector"
+                          >
+                            <Send className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
-      {/* Right Column: Multi-Face Evidence Logs & Compliance Evaluation */}
+      {/* Right Column: Optical Evidence & Compliance Report */}
       <div className="lg:col-span-7 space-y-6">
         {data ? (
           <>
-            {/* Scanned Header */}
             <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
-              <div className="flex justify-between items-start">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-mono uppercase text-slate-400">Scanned Item</span>
                     <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
                       {data.category || 'NON_FOOD'}
                     </span>
+                    {data.id && <span className="text-[10px] font-mono text-slate-500">ID: #{data.id}</span>}
                   </div>
                   <h2 className="text-2xl font-bold text-white mt-1">
                     {data.product_name || declarations.product_name || 'Packaged Commodity'}
                   </h2>
                 </div>
-                <span className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold border ${
-                  compliance.status === 'COMPLIANT'
-                    ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
-                    : 'bg-rose-500/20 text-rose-400 border-rose-500/30'
-                }`}>
-                  {compliance.status === 'COMPLIANT' ? <ShieldCheck className="w-4 h-4" /> : <ShieldAlert className="w-4 h-4" />}
-                  {compliance.status} ({compliance.compliance_score}/100)
-                </span>
+
+                <div className="flex items-center gap-2">
+                  <span className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold border ${
+                    compliance.status === 'COMPLIANT'
+                      ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                      : 'bg-rose-500/20 text-rose-400 border-rose-500/30'
+                  }`}>
+                    {compliance.status === 'COMPLIANT' ? <ShieldCheck className="w-4 h-4" /> : <ShieldAlert className="w-4 h-4" />}
+                    {compliance.status} ({compliance.compliance_score}/100)
+                  </span>
+
+                  {data.id && compliance.status !== 'COMPLIANT' && (
+                    <button
+                      type="button"
+                      onClick={() => handleForwardToInspector(data.id)}
+                      className="bg-rose-600 hover:bg-rose-500 text-white px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition shadow-lg shadow-rose-600/20"
+                    >
+                      <Send className="w-3.5 h-3.5" /> Report Infraction
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 
-            {/* LIVE OPTICAL EXTRACTION INSPECTOR (MULTI-FACE BREAKDOWN) */}
             {panelKeys.length > 0 && (
               <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-4 shadow-xl">
                 <div className="flex justify-between items-center">
@@ -107,11 +261,10 @@ export default function CitizenDashboard() {
                     Multi-Face Optical Extraction Evidence
                   </h3>
                   <span className="text-xs text-slate-400 font-mono bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
-                    {panelKeys.length} Faces Synthesized
+                    {panelKeys.length} Faces Captured
                   </span>
                 </div>
 
-                {/* Face Navigation Tabs */}
                 <div className="flex gap-1.5 overflow-x-auto pb-1">
                   <button
                     type="button"
@@ -122,7 +275,7 @@ export default function CitizenDashboard() {
                         : 'bg-slate-950 border border-slate-800 text-slate-400 hover:text-slate-200'
                     }`}
                   >
-                    <Layers className="w-3 h-3" /> All Faces
+                    <Layers className="w-3.5 h-3.5" /> All Faces
                   </button>
                   {panelKeys.map((faceId) => (
                     <button
@@ -135,17 +288,16 @@ export default function CitizenDashboard() {
                           : 'bg-slate-950 border border-slate-800 text-slate-400 hover:text-slate-200'
                       }`}
                     >
-                      <Eye className="w-3 h-3" />
+                      <Eye className="w-3.5 h-3.5" />
                       {faceId}
                     </button>
                   ))}
                 </div>
 
-                {/* Selected Face Deep Dive */}
                 {activeTab === 'all' ? (
                   <div className="bg-slate-950 border border-slate-800 p-4 rounded-xl space-y-2">
                     <span className="text-xs font-mono font-semibold text-indigo-400 block">
-                      Consolidated Package Corpus (Sent for Statutory Audit):
+                      Consolidated Package Corpus:
                     </span>
                     <div className="space-y-3 max-h-48 overflow-y-auto pr-1">
                       {panelKeys.map((pKey) => (
@@ -164,7 +316,7 @@ export default function CitizenDashboard() {
                   <div className="bg-slate-950 border border-slate-800 p-4 rounded-xl grid grid-cols-1 md:grid-cols-12 gap-4">
                     <div className="md:col-span-4 flex flex-col items-center justify-center bg-black/40 rounded-lg p-2 border border-slate-800/80">
                       <img
-                        src={data.clean_textures?.[activeTab] || data.textures?.[activeTab]?.url}
+                        src={data.clean_textures?.[activeTab] || data.textures?.[activeTab]}
                         alt={activeTab}
                         className="max-h-40 object-contain rounded"
                       />
@@ -185,7 +337,6 @@ export default function CitizenDashboard() {
               </div>
             )}
 
-            {/* Consolidated Statutory Declarations Grid */}
             <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-5 shadow-xl">
               <div className="flex justify-between items-center">
                 <h3 className="font-bold text-white text-base flex items-center gap-2">
@@ -197,9 +348,7 @@ export default function CitizenDashboard() {
                 </span>
               </div>
 
-              {/* Declarations Meta Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                {/* MRP */}
                 <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex items-start gap-3">
                   <IndianRupee className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
                   <div>
@@ -210,7 +359,6 @@ export default function CitizenDashboard() {
                   </div>
                 </div>
 
-                {/* Unit Sale Price */}
                 <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex items-start gap-3">
                   <Scale className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
                   <div>
@@ -221,7 +369,6 @@ export default function CitizenDashboard() {
                   </div>
                 </div>
 
-                {/* Net Quantity */}
                 <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex items-start gap-3">
                   <Scale className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                   <div>
@@ -232,7 +379,6 @@ export default function CitizenDashboard() {
                   </div>
                 </div>
 
-                {/* Dates */}
                 <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex items-start gap-3">
                   <Calendar className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
                   <div>
@@ -243,7 +389,6 @@ export default function CitizenDashboard() {
                   </div>
                 </div>
 
-                {/* Manufacturer Details */}
                 <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex items-start gap-3 sm:col-span-2">
                   <Building2 className="w-4 h-4 text-violet-400 shrink-0 mt-0.5" />
                   <div>
@@ -254,7 +399,6 @@ export default function CitizenDashboard() {
                   </div>
                 </div>
 
-                {/* Consumer Care & Origin */}
                 <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex items-start gap-3">
                   <PhoneCall className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
                   <div>
@@ -276,7 +420,6 @@ export default function CitizenDashboard() {
                 </div>
               </div>
 
-              {/* 1. SATISFIED STATUTORY PROVISIONS (RULES FOLLOWED) */}
               {passedRules.length > 0 && (
                 <div className="space-y-2.5 pt-3 border-t border-slate-800">
                   <h4 className="text-xs uppercase font-semibold text-emerald-400 flex items-center gap-1.5">
@@ -285,10 +428,7 @@ export default function CitizenDashboard() {
                   </h4>
                   <div className="grid grid-cols-1 gap-2">
                     {passedRules.map((c, i) => (
-                      <div 
-                        key={i} 
-                        className="bg-emerald-950/20 border border-emerald-900/40 p-3 rounded-xl text-xs flex items-start gap-2.5"
-                      >
+                      <div key={i} className="bg-emerald-950/20 border border-emerald-900/40 p-3 rounded-xl text-xs flex items-start gap-2.5">
                         <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
                         <div className="space-y-0.5">
                           <div className="flex items-center gap-2">
@@ -303,8 +443,7 @@ export default function CitizenDashboard() {
                 </div>
               )}
 
-              {/* 2. INFRACTIONS IDENTIFIED (FAULTS / NON-COMPLIANCE) */}
-              {failedRules.length > 0 ? (
+              {failedRules.length > 0 && (
                 <div className="space-y-2.5 pt-3 border-t border-slate-800">
                   <h4 className="text-xs uppercase font-semibold text-rose-400 flex items-center gap-1.5">
                     <AlertOctagon className="w-4 h-4 text-rose-400" />
@@ -312,10 +451,7 @@ export default function CitizenDashboard() {
                   </h4>
                   <div className="grid grid-cols-1 gap-2">
                     {failedRules.map((v, i) => (
-                      <div 
-                        key={i} 
-                        className="bg-rose-950/30 border border-rose-900/40 p-3 rounded-xl text-xs flex items-start gap-2.5"
-                      >
+                      <div key={i} className="bg-rose-950/30 border border-rose-900/40 p-3 rounded-xl text-xs flex items-start gap-2.5">
                         <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
                         <div className="space-y-0.5">
                           <div className="flex items-center gap-2">
@@ -332,24 +468,16 @@ export default function CitizenDashboard() {
                     ))}
                   </div>
                 </div>
-              ) : (
-                <div className="pt-3 border-t border-slate-800 flex items-center gap-2 text-xs text-emerald-400">
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>All statutory declarations under Legal Metrology Rules, 2011 are verified and compliant.</span>
-                </div>
               )}
             </div>
 
-            {/* Nutri-Score (Food Only) */}
-            {data.health && data.category === 'FOOD' && (
-              <HealthBadge health={data.health} />
-            )}
+            {data.health && data.category === 'FOOD' && <HealthBadge health={data.health} />}
           </>
         ) : (
           <div className="h-96 border border-dashed border-slate-800 rounded-2xl flex flex-col items-center justify-center text-center p-8 text-slate-500 text-sm">
             <p className="font-semibold text-slate-400 mb-1">Awaiting Inspection</p>
             <p className="text-xs max-w-sm">
-              Capture or upload all package faces (Front, Top, Back, Sides) on the left to synthesize multi-face text and verify compliance against Legal Metrology Rules 2011.
+              Capture or upload package faces on the left to synthesize multi-face text and verify compliance against Legal Metrology Rules 2011.
             </p>
           </div>
         )}

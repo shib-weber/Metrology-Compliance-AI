@@ -6,23 +6,39 @@ from core.security import verify_password, get_password_hash, create_access_toke
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
+
 @router.on_event("startup")
 def seed_users():
     from db.database import SessionLocal
     db = SessionLocal()
-    if not db.query(DBUser).filter(DBUser.username == "inspector").first():
-        db.add(DBUser(username="inspector", hashed_password=get_password_hash("admin123"), role="inspector"))
-        db.add(DBUser(username="citizen", hashed_password=get_password_hash("user123"), role="citizen"))
-        db.commit()
-    db.close()
+    try:
+        if not db.query(DBUser).filter(DBUser.email == "inspector@metronox.gov.in").first():
+            db.add(DBUser(
+                email="inspector@metronox.gov.in", 
+                hashed_password=get_password_hash("admin123"), 
+                role="inspector"
+            ))
+            db.add(DBUser(
+                email="citizen@metronox.in", 
+                hashed_password=get_password_hash("user123"), 
+                role="citizen"
+            ))
+            db.commit()
+    except Exception as e:
+        db.rollback()
+        print(f"[Database Seed Notice]: {e}")
+    finally:
+        db.close()
+
 
 @router.post("/signup", response_model=Token, status_code=status.HTTP_201_CREATED)
 def signup(payload: UserSignup, db: Session = Depends(get_db)):
-    existing_user = db.query(DBUser).filter(DBUser.username == payload.username.strip()).first()
+    clean_email = payload.email.strip().lower()
+    existing_user = db.query(DBUser).filter(DBUser.email == clean_email).first()
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username already registered. Please choose a different username."
+            detail="Email address already registered. Please sign in instead."
         )
 
     if len(payload.password) < 6:
@@ -32,7 +48,7 @@ def signup(payload: UserSignup, db: Session = Depends(get_db)):
         )
 
     new_user = DBUser(
-        username=payload.username.strip(),
+        email=clean_email,
         hashed_password=get_password_hash(payload.password),
         role=payload.role
     )
@@ -40,19 +56,31 @@ def signup(payload: UserSignup, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(new_user)
 
-    token = create_access_token(data={"sub": new_user.username, "role": new_user.role})
+    token = create_access_token(data={"sub": new_user.email, "role": new_user.role, "id": new_user.id})
     return {
         "access_token": token,
         "token_type": "bearer",
         "role": new_user.role,
-        "username": new_user.username
+        "email": new_user.email,
+        "user_id": new_user.id
     }
+
 
 @router.post("/login", response_model=Token)
 def login(payload: UserLogin, db: Session = Depends(get_db)):
-    user = db.query(DBUser).filter(DBUser.username == payload.username.strip()).first()
+    clean_email = payload.email.strip().lower()
+    user = db.query(DBUser).filter(DBUser.email == clean_email).first()
     if not user or not verify_password(payload.password, user.hashed_password):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid username or password")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, 
+            detail="Invalid email or password."
+        )
     
-    token = create_access_token(data={"sub": user.username, "role": user.role})
-    return {"access_token": token, "token_type": "bearer", "role": user.role, "username": user.username}
+    token = create_access_token(data={"sub": user.email, "role": user.role, "id": user.id})
+    return {
+        "access_token": token, 
+        "token_type": "bearer", 
+        "role": user.role, 
+        "email": user.email,
+        "user_id": user.id
+    }

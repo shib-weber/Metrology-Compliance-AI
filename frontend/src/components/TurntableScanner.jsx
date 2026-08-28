@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useAuth } from '../context/AuthContext';
 import { 
   Camera, 
   AlertCircle, 
@@ -36,7 +37,8 @@ const SHAPE_SCHEMAS = {
   ]
 };
 
-export default function TurntableScanner({ onComplete }) {
+export default function TurntableScanner({ onComplete, email }) {
+  const { user } = useAuth();
   const [selectedShape, setSelectedShape] = useState('box');
   const [panelIdx, setPanelIdx] = useState(0);
   const [captured, setCaptured] = useState({});
@@ -163,6 +165,11 @@ export default function TurntableScanner({ onComplete }) {
 
     fd.append('panel_ids', panelIds.join(','));
 
+    // Authenticated submitter email attached for personal audit logs
+    const submitterEmail = email || user?.email || localStorage.getItem('user_email') || 'anonymous';
+    fd.append('email', submitterEmail);
+    fd.append('username', submitterEmail);
+
     try {
       // 1. Audit Analysis
       const res = await fetch('http://localhost:8000/api/scan/analyze', {
@@ -191,25 +198,28 @@ export default function TurntableScanner({ onComplete }) {
         }
       }
 
-      const cleanMap = data.clean_textures || {};
+      const cleanMap = data.clean_textures || data.textures || {};
       const fallbackClean = cleanMap.front || Object.values(cleanMap)[0] || allPanels.front?.url;
 
       const resolvedTextures = {
-        front: { url: cleanMap.front || fallbackClean },
-        top: { url: cleanMap.top || fallbackClean },
-        back: { url: cleanMap.back || fallbackClean },
-        left: { url: cleanMap.left || fallbackClean },
-        right: { url: cleanMap.right || fallbackClean },
-        bottom: { url: cleanMap.bottom || fallbackClean }
+        front: cleanMap.front || fallbackClean,
+        top: cleanMap.top || fallbackClean,
+        back: cleanMap.back || fallbackClean,
+        left: cleanMap.left || fallbackClean,
+        right: cleanMap.right || fallbackClean,
+        bottom: cleanMap.bottom || fallbackClean
       };
 
-      onComplete({ 
-        ...data, 
-        glbUrl,
-        textures: resolvedTextures, 
-        geometry: selectedShape, 
-        raw_captures: allPanels 
-      });
+      if (onComplete) {
+        onComplete({ 
+          ...data, 
+          glbUrl,
+          textures: resolvedTextures, 
+          clean_textures: resolvedTextures,
+          geometry: selectedShape, 
+          raw_captures: allPanels 
+        });
+      }
       stopCamera();
     } catch (err) {
       setErrorMessage(err.message);
@@ -258,7 +268,7 @@ export default function TurntableScanner({ onComplete }) {
       {/* Error Alert */}
       {errorMessage && (
         <div className="p-3 bg-rose-950/60 border border-rose-800 rounded-xl text-rose-300 text-xs flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+          <AlertCircle className="w-4 h-4 shrink-0 text-rose-400 mt-0.5" />
           <span>{errorMessage}</span>
         </div>
       )}
@@ -349,7 +359,7 @@ export default function TurntableScanner({ onComplete }) {
           <button
             type="button"
             onClick={startCamera}
-            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-2.5 rounded-xl font-medium text-xs flex items-center justify-center gap-1.5 transition"
+            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-2.5 rounded-xl font-medium text-xs flex items-center justify-center gap-1.5 transition shadow-md shadow-indigo-600/20"
           >
             <Video className="w-4 h-4" /> Start Camera
           </button>
@@ -358,7 +368,7 @@ export default function TurntableScanner({ onComplete }) {
             <button
               type="button"
               onClick={snapCurrentView}
-              className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 rounded-xl font-medium text-xs flex items-center justify-center gap-1.5 transition"
+              className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 rounded-xl font-medium text-xs flex items-center justify-center gap-1.5 transition shadow-md shadow-emerald-600/20"
             >
               <Camera className="w-4 h-4" /> Snap {currentPanel.id.toUpperCase()}
             </button>
@@ -388,14 +398,14 @@ export default function TurntableScanner({ onComplete }) {
         </button>
       </div>
 
-      {/* Batch Submit */}
+      {/* Batch Submit Button */}
       {capturedCount > 0 && (
         <div className="pt-1">
           <button
             type="button"
             onClick={() => executeBatchInspection()}
             disabled={scanning}
-            className="w-full bg-indigo-600/30 hover:bg-indigo-600 border border-indigo-500/50 text-indigo-200 hover:text-white py-2.5 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-2"
+            className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:pointer-events-none text-white py-2.5 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/30"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${scanning ? 'animate-spin' : ''}`} />
             {scanning ? 'Auditing & Reconstructing Twin...' : `Scan & Audit ${capturedCount} Captured Faces`}

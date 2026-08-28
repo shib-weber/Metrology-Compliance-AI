@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import TurntableScanner from '../components/TurntableScanner';
 import ProductViewer3D from '../components/ProductViewer3D';
 import HealthBadge from '../components/HealthBadge';
+import { useAuth } from '../context/AuthContext';
 import { 
   ShieldCheck, 
   ShieldAlert, 
@@ -17,29 +18,38 @@ import {
   Globe2, 
   PhoneCall, 
   CheckCircle2, 
-  AlertTriangle,
-  FileCheck2,
-  AlertOctagon,
-  History,
-  Download,
-  ExternalLink,
-  Ruler,
-  BadgeCheck,
-  FileSpreadsheet,
-  Gavel,
-  RefreshCw
+  AlertTriangle, 
+  FileCheck2, 
+  AlertOctagon, 
+  History, 
+  Download, 
+  ExternalLink, 
+  Ruler, 
+  Gavel, 
+  RefreshCw, 
+  User, 
+  Filter,
+  Flag,
+  UserCheck
 } from 'lucide-react';
 
 export default function InspectorDashboard() {
+  const { user } = useAuth();
   const [data, setData] = useState(null);
   const [history, setHistory] = useState([]);
   const [activeTab, setActiveTab] = useState('all');
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [queueFilter, setQueueFilter] = useState('all_relevant'); // 'all_relevant' | 'citizen_reports' | 'my_scans'
+  const [selectedActionRecord, setSelectedActionRecord] = useState(null);
+  const [actionNotes, setActionNotes] = useState('');
+  const [actionType, setActionType] = useState('NOTICE_ISSUED');
 
   const loadHistory = async () => {
+    const inspectorEmail = user?.email || localStorage.getItem('user_email') || 'inspector@metronox.gov.in';
     setLoadingHistory(true);
     try {
-      const res = await fetch('http://localhost:8000/api/reports/list');
+      // Fetch role-isolated enforcement queue
+      const res = await fetch(`http://localhost:8000/api/reports/list?email=${encodeURIComponent(inspectorEmail)}&role=inspector`);
       const json = await res.json();
       setHistory(Array.isArray(json) ? json : []);
     } catch (err) {
@@ -51,34 +61,60 @@ export default function InspectorDashboard() {
 
   useEffect(() => {
     loadHistory();
-  }, []);
+  }, [user]);
+
+  const handleApplyAction = async (reportId) => {
+    try {
+      const inspectorEmail = user?.email || localStorage.getItem('user_email') || 'inspector@metronox.gov.in';
+      const res = await fetch(`http://localhost:8000/api/reports/${reportId}/action`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: actionType,
+          notes: actionNotes,
+          inspector_email: inspectorEmail
+        })
+      });
+      if (res.ok) {
+        setSelectedActionRecord(null);
+        setActionNotes('');
+        loadHistory();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   const handleDownloadPDF = (reportId) => {
     if (!reportId) return;
     window.open(`http://localhost:8000/api/reports/${reportId}/pdf`, '_blank');
   };
 
-  // Field Normalization
+  // Filter queue strictly to Citizen Reports OR Inspector's Own Scans
+  const currentInspectorEmail = (user?.email || '').toLowerCase().trim();
+  const filteredHistory = history.filter((item) => {
+    const isMyScan = item.created_by && item.created_by.toLowerCase().trim() === currentInspectorEmail;
+    const isCitizenReport = item.flagged_for_review === true;
+
+    if (queueFilter === 'citizen_reports') return isCitizenReport;
+    if (queueFilter === 'my_scans') return isMyScan;
+    // Default 'all_relevant': only show citizen reports and my own scans
+    return isCitizenReport || isMyScan;
+  });
+
   const panelTexts = data?.panel_texts || data?.raw_ocr_logs || {};
   const declarations = data?.declarations_summary || data?.raw_declarations || {};
-  const compliance = data?.compliance || { 
-    status: 'PENDING', 
-    compliance_score: 0, 
-    violations: [], 
-    compliances: [] 
-  };
+  const compliance = data?.compliance || { status: 'PENDING', compliance_score: 0, violations: [], compliances: [] };
   const panelKeys = Object.keys(panelTexts);
   const passedRules = compliance.compliances || [];
   const failedRules = compliance.violations || [];
 
   return (
     <div className="max-w-7xl mx-auto p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8">
-      
-      {/* LEFT COLUMN: 6-Axis Scanner, Digital Twin & History Logs */}
+      {/* LEFT COLUMN: Scanner, 3D Twin & Enforcement Queue */}
       <div className="lg:col-span-5 space-y-6">
-        
-        {/* Scanner Component */}
         <TurntableScanner 
+          email={user?.email || 'inspector@metronox.gov.in'}
           onComplete={(res) => {
             setData(res);
             setActiveTab('all');
@@ -86,8 +122,7 @@ export default function InspectorDashboard() {
           }} 
         />
 
-        {/* 3D WebGL Digital Twin */}
-        {data?.textures && (
+        {(data?.textures || data?.clean_textures) && (
           <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl space-y-3 shadow-xl">
             <div className="flex justify-between items-center px-1">
               <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
@@ -99,20 +134,20 @@ export default function InspectorDashboard() {
             </div>
             
             <ProductViewer3D
-              textures={data.textures}
+              textures={data.textures || data.clean_textures}
               geometryType={data.geometry || 'box'}
-              meshDims={data.mesh_dims}
             />
           </div>
         )}
 
-        {/* Enforcement Database / Statutory Audit Log */}
+        {/* Restricted Enforcement Queue (Citizen Reports + Own Scans) */}
         <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-xl space-y-4">
           <div className="flex justify-between items-center">
-            <h3 className="text-sm font-bold text-white flex items-center gap-2">
-              <History className="w-4 h-4 text-indigo-400" />
-              Enforcement Database Log
+            <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
+              <Gavel className="w-4 h-4 text-indigo-400" />
+              Enforcement Docket ({filteredHistory.length})
             </h3>
+            
             <button 
               onClick={loadHistory}
               className="text-slate-400 hover:text-slate-200 transition"
@@ -122,55 +157,113 @@ export default function InspectorDashboard() {
             </button>
           </div>
 
+          {/* Queue Filter Segment */}
+          <div className="grid grid-cols-3 gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 text-[11px] font-medium">
+            <button
+              type="button"
+              onClick={() => setQueueFilter('all_relevant')}
+              className={`py-1.5 rounded-lg transition ${
+                queueFilter === 'all_relevant' ? 'bg-indigo-600 text-white font-bold' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Active Queue
+            </button>
+            <button
+              type="button"
+              onClick={() => setQueueFilter('citizen_reports')}
+              className={`py-1.5 rounded-lg transition flex items-center justify-center gap-1 ${
+                queueFilter === 'citizen_reports' ? 'bg-rose-600 text-white font-bold' : 'text-rose-400 hover:text-rose-300'
+              }`}
+            >
+              <Flag className="w-3 h-3" /> Reported
+            </button>
+            <button
+              type="button"
+              onClick={() => setQueueFilter('my_scans')}
+              className={`py-1.5 rounded-lg transition flex items-center justify-center gap-1 ${
+                queueFilter === 'my_scans' ? 'bg-indigo-700 text-white font-bold' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <UserCheck className="w-3 h-3" /> My Audits
+            </button>
+          </div>
+
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs text-slate-300">
               <thead className="bg-slate-950 text-slate-400 uppercase font-mono border-b border-slate-800 text-[10px]">
                 <tr>
-                  <th className="p-2.5">Product</th>
-                  <th className="p-2.5">Status</th>
-                  <th className="p-2.5">Score</th>
-                  <th className="p-2.5 text-right">Actions</th>
+                  <th className="p-2">Item / Source</th>
+                  <th className="p-2">Status</th>
+                  <th className="p-2">Legal Action</th>
+                  <th className="p-2 text-right">Review</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/70">
-                {history.length === 0 ? (
+                {filteredHistory.length === 0 ? (
                   <tr>
                     <td colSpan={4} className="p-4 text-center text-slate-500 text-xs">
-                      No statutory audits found in repository.
+                      No citizen reports or personal inspections found.
                     </td>
                   </tr>
                 ) : (
-                  history.slice(0, 5).map((h) => (
-                    <tr key={h.id} className="hover:bg-slate-950/50 transition">
-                      <td className="p-2.5 font-semibold text-white max-w-[100px] truncate">{h.product_name}</td>
-                      <td className="p-2.5">
-                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
-                          h.status === 'COMPLIANT' 
-                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
-                            : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-                        }`}>
-                          {h.status}
-                        </span>
-                      </td>
-                      <td className="p-2.5 font-mono text-[11px]">{h.compliance_score}%</td>
-                      <td className="p-2.5 text-right space-x-2">
-                        <Link 
-                          to={`/reports/${h.id}`}
-                          className="text-indigo-400 hover:text-indigo-300 inline-flex items-center"
-                          title="View Full Case"
-                        >
-                          <ExternalLink className="w-3 h-3" />
-                        </Link>
-                        <button
-                          onClick={() => handleDownloadPDF(h.id)}
-                          className="text-slate-400 hover:text-white inline-flex items-center"
-                          title="Download Form V Notice"
-                        >
-                          <Download className="w-3 h-3" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))
+                  filteredHistory.slice(0, 8).map((h) => {
+                    const isCitizen = h.flagged_for_review;
+                    return (
+                      <tr key={h.id} className="hover:bg-slate-950/50 transition">
+                        <td className="p-2 max-w-[120px]">
+                          <span className="font-semibold text-white block truncate">{h.product_name}</span>
+                          <span className={`text-[9px] font-mono flex items-center gap-1 truncate ${
+                            isCitizen ? 'text-rose-400 font-bold' : 'text-indigo-300'
+                          }`}>
+                            {isCitizen ? <Flag className="w-2.5 h-2.5 shrink-0" /> : <User className="w-2.5 h-2.5 shrink-0" />}
+                            {isCitizen ? 'Citizen Report' : 'My Audit'}
+                          </span>
+                        </td>
+                        <td className="p-2">
+                          <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                            h.status === 'COMPLIANT' 
+                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
+                              : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                          }`}>
+                            {h.status}
+                          </span>
+                        </td>
+                        <td className="p-2 font-mono text-[10px]">
+                          <span className={`px-1.5 py-0.5 rounded font-bold ${
+                            h.inspector_action === 'NOTICE_ISSUED' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' :
+                            h.inspector_action === 'SEIZED' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40' :
+                            h.inspector_action === 'RESOLVED' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' :
+                            'bg-slate-800 text-slate-400'
+                          }`}>
+                            {h.inspector_action || 'PENDING'}
+                          </span>
+                        </td>
+                        <td className="p-2 text-right space-x-1.5">
+                          <button
+                            onClick={() => setSelectedActionRecord(h)}
+                            className="text-indigo-400 hover:text-indigo-300 p-1 rounded hover:bg-slate-800"
+                            title="Issue Enforcement Order"
+                          >
+                            <Gavel className="w-3.5 h-3.5" />
+                          </button>
+                          <Link 
+                            to={`/reports/${h.id}`}
+                            className="text-slate-400 hover:text-slate-200 inline-flex items-center p-1"
+                            title="View Full Case File"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </Link>
+                          <button
+                            onClick={() => handleDownloadPDF(h.id)}
+                            className="text-slate-400 hover:text-white inline-flex items-center p-1"
+                            title="Download Form V Notice"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -178,11 +271,56 @@ export default function InspectorDashboard() {
         </div>
       </div>
 
-      {/* RIGHT COLUMN: Statutory Audit Breakdown, Rule 7 Metrics & Inspection Tools */}
+      {/* RIGHT COLUMN: Action Modal & Statutory Audit Details */}
       <div className="lg:col-span-7 space-y-6">
+        {selectedActionRecord && (
+          <div className="bg-indigo-950/40 border-2 border-indigo-500/60 p-5 rounded-2xl shadow-2xl space-y-3 animate-in fade-in">
+            <div className="flex justify-between items-center">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-indigo-200 flex items-center gap-1.5">
+                <Gavel className="w-4 h-4 text-indigo-400" />
+                Statutory Order for Scan #{selectedActionRecord.id} ({selectedActionRecord.product_name})
+              </h4>
+              <button 
+                onClick={() => setSelectedActionRecord(null)}
+                className="text-slate-400 hover:text-white text-xs font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+              <select 
+                value={actionType}
+                onChange={(e) => setActionType(e.target.value)}
+                className="bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white outline-none focus:border-indigo-400 font-medium"
+              >
+                <option value="NOTICE_ISSUED">Issue Form V Notice (Rule 24)</option>
+                <option value="SEIZED">Seize Commodity Batch (Section 15)</option>
+                <option value="PENALTY_IMPOSED">Impose Compounding Penalty (Section 36)</option>
+                <option value="RESOLVED">Mark Compliant / Rectified</option>
+                <option value="DISMISSED">Dismiss Complaint</option>
+              </select>
+
+              <input 
+                type="text"
+                placeholder="Order reference / enforcement remarks"
+                value={actionNotes}
+                onChange={(e) => setActionNotes(e.target.value)}
+                className="bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white outline-none focus:border-indigo-400 text-xs"
+              />
+            </div>
+
+            <button
+              onClick={() => handleApplyAction(selectedActionRecord.id)}
+              className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2.5 rounded-xl text-xs transition shadow-lg shadow-indigo-600/30"
+            >
+              Sign & Execute Enforcement Order
+            </button>
+          </div>
+        )}
+
         {data ? (
           <>
-            {/* Enforcement Assessment Header */}
             <div className="bg-slate-900 border border-slate-800 p-5 sm:p-6 rounded-2xl shadow-xl space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
@@ -195,7 +333,7 @@ export default function InspectorDashboard() {
                     </span>
                     {data.id && (
                       <span className="text-[10px] font-mono text-slate-400">
-                        ID: #{data.id.slice?.(0, 8) || data.id}
+                        ID: #{data.id}
                       </span>
                     )}
                   </div>
@@ -227,7 +365,7 @@ export default function InspectorDashboard() {
               </div>
             </div>
 
-            {/* Rule 7 Metrology Font Height & PDP Ratio Audit Card (Inspector Advantage) */}
+            {/* Rule 7 Font Height & PDP Ratio Audit */}
             {data.font_audit && (
               <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-3 shadow-xl">
                 <div className="flex justify-between items-center">
@@ -273,7 +411,7 @@ export default function InspectorDashboard() {
               </div>
             )}
 
-            {/* Multi-Face Optical Extraction Evidence Tabs */}
+            {/* Multi-Face Optical Extraction Evidence */}
             {panelKeys.length > 0 && (
               <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-4 shadow-xl">
                 <div className="flex justify-between items-center">
@@ -286,7 +424,6 @@ export default function InspectorDashboard() {
                   </span>
                 </div>
 
-                {/* Face Navigation Tabs */}
                 <div className="flex gap-1.5 overflow-x-auto pb-1">
                   <button
                     type="button"
@@ -316,11 +453,10 @@ export default function InspectorDashboard() {
                   ))}
                 </div>
 
-                {/* Selected Face Deep Dive */}
                 {activeTab === 'all' ? (
                   <div className="bg-slate-950 border border-slate-800 p-4 rounded-xl space-y-2">
                     <span className="text-xs font-mono font-semibold text-indigo-400 block">
-                      Consolidated Package Corpus (Sent for Statutory Audit):
+                      Consolidated Package Corpus:
                     </span>
                     <div className="space-y-3 max-h-48 overflow-y-auto pr-1">
                       {panelKeys.map((pKey) => (
@@ -339,7 +475,7 @@ export default function InspectorDashboard() {
                   <div className="bg-slate-950 border border-slate-800 p-4 rounded-xl grid grid-cols-1 md:grid-cols-12 gap-4">
                     <div className="md:col-span-4 flex flex-col items-center justify-center bg-black/40 rounded-lg p-2 border border-slate-800/80">
                       <img
-                        src={data.clean_textures?.[activeTab] || data.textures?.[activeTab]?.url}
+                        src={data.clean_textures?.[activeTab] || data.textures?.[activeTab]}
                         alt={activeTab}
                         className="max-h-40 object-contain rounded"
                       />
@@ -360,7 +496,7 @@ export default function InspectorDashboard() {
               </div>
             )}
 
-            {/* Consolidated Statutory Declarations Grid */}
+            {/* Consolidated Declarations */}
             <div className="bg-slate-900 border border-slate-800 p-5 sm:p-6 rounded-2xl space-y-5 shadow-xl">
               <div className="flex justify-between items-center">
                 <h3 className="font-bold text-white text-base flex items-center gap-2">
@@ -372,9 +508,7 @@ export default function InspectorDashboard() {
                 </span>
               </div>
 
-              {/* Declarations Meta Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                {/* MRP */}
                 <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex items-start gap-3">
                   <IndianRupee className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
                   <div>
@@ -385,7 +519,6 @@ export default function InspectorDashboard() {
                   </div>
                 </div>
 
-                {/* Unit Sale Price */}
                 <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex items-start gap-3">
                   <Scale className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
                   <div>
@@ -396,7 +529,6 @@ export default function InspectorDashboard() {
                   </div>
                 </div>
 
-                {/* Net Quantity */}
                 <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex items-start gap-3">
                   <Scale className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                   <div>
@@ -407,7 +539,6 @@ export default function InspectorDashboard() {
                   </div>
                 </div>
 
-                {/* Dates */}
                 <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex items-start gap-3">
                   <Calendar className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
                   <div>
@@ -418,7 +549,6 @@ export default function InspectorDashboard() {
                   </div>
                 </div>
 
-                {/* Manufacturer Details */}
                 <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex items-start gap-3 sm:col-span-2">
                   <Building2 className="w-4 h-4 text-violet-400 shrink-0 mt-0.5" />
                   <div>
@@ -429,7 +559,6 @@ export default function InspectorDashboard() {
                   </div>
                 </div>
 
-                {/* Consumer Care & Origin */}
                 <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex items-start gap-3">
                   <PhoneCall className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
                   <div>
@@ -451,7 +580,6 @@ export default function InspectorDashboard() {
                 </div>
               </div>
 
-              {/* Passed Rules Section */}
               {passedRules.length > 0 && (
                 <div className="space-y-2.5 pt-3 border-t border-slate-800">
                   <h4 className="text-xs uppercase font-semibold text-emerald-400 flex items-center gap-1.5">
@@ -460,10 +588,7 @@ export default function InspectorDashboard() {
                   </h4>
                   <div className="grid grid-cols-1 gap-2">
                     {passedRules.map((c, i) => (
-                      <div 
-                        key={i} 
-                        className="bg-emerald-950/20 border border-emerald-900/40 p-3 rounded-xl text-xs flex items-start gap-2.5"
-                      >
+                      <div key={i} className="bg-emerald-950/20 border border-emerald-900/40 p-3 rounded-xl text-xs flex items-start gap-2.5">
                         <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
                         <div className="space-y-0.5">
                           <div className="flex items-center gap-2">
@@ -478,8 +603,7 @@ export default function InspectorDashboard() {
                 </div>
               )}
 
-              {/* Identified Infractions Section */}
-              {failedRules.length > 0 ? (
+              {failedRules.length > 0 && (
                 <div className="space-y-2.5 pt-3 border-t border-slate-800">
                   <h4 className="text-xs uppercase font-semibold text-rose-400 flex items-center gap-1.5">
                     <AlertOctagon className="w-4 h-4 text-rose-400" />
@@ -487,10 +611,7 @@ export default function InspectorDashboard() {
                   </h4>
                   <div className="grid grid-cols-1 gap-2">
                     {failedRules.map((v, i) => (
-                      <div 
-                        key={i} 
-                        className="bg-rose-950/30 border border-rose-900/40 p-3 rounded-xl text-xs flex items-start gap-2.5"
-                      >
+                      <div key={i} className="bg-rose-950/30 border border-rose-900/40 p-3 rounded-xl text-xs flex items-start gap-2.5">
                         <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
                         <div className="space-y-0.5">
                           <div className="flex items-center gap-2">
@@ -507,18 +628,10 @@ export default function InspectorDashboard() {
                     ))}
                   </div>
                 </div>
-              ) : (
-                <div className="pt-3 border-t border-slate-800 flex items-center gap-2 text-xs text-emerald-400">
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>All statutory provisions under the Legal Metrology Rules, 2011 are verified and compliant.</span>
-                </div>
               )}
             </div>
 
-            {/* Health Score Summary (Food Only) */}
-            {data.health && data.category === 'FOOD' && (
-              <HealthBadge health={data.health} />
-            )}
+            {data.health && data.category === 'FOOD' && <HealthBadge health={data.health} />}
           </>
         ) : (
           <div className="h-96 border border-dashed border-slate-800 rounded-2xl flex flex-col items-center justify-center text-center p-8 text-slate-500 text-sm">

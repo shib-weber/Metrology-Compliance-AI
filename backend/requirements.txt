@@ -18,3 +18,4 @@ shapely
 easyocr
 pytesseract
 rapidocr-onnxruntime
+psycopg2-binary

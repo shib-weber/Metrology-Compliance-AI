@@ -5,16 +5,16 @@ import {
   Download, 
   ShieldCheck, 
   ShieldAlert, 
-  Calendar, 
   Database,
-  FileText,
   Clock,
-  ExternalLink,
   Loader2,
-  AlertCircle
+  AlertCircle,
+  Layers,
+  User
 } from 'lucide-react';
 import ComplianceReport from '../components/ComplianceReport';
 import HealthBadge from '../components/HealthBadge';
+import ProductViewer3D from '../components/ProductViewer3D';
 
 export default function ReportDetails() {
   const { reportId } = useParams();
@@ -73,7 +73,7 @@ export default function ReportDetails() {
   const compliancePayload = {
     status: report.status,
     compliance_score: report.compliance_score,
-    violations: report.violations
+    violations: report.violations || []
   };
 
   const healthPayload = {
@@ -86,8 +86,6 @@ export default function ReportDetails() {
 
   return (
     <div className="max-w-5xl mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
-      
-      {/* Top Bar Navigation & Actions */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-800/80">
         <Link 
           to="/inspector" 
@@ -112,7 +110,6 @@ export default function ReportDetails() {
         </div>
       </div>
 
-      {/* Case Overview Metadata Card */}
       <div className="bg-slate-900 border border-slate-800 p-5 sm:p-6 rounded-3xl shadow-xl space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
@@ -122,6 +119,9 @@ export default function ReportDetails() {
               </span>
               <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-950 text-slate-400 border border-slate-800">
                 ID: #{String(reportId).slice(0, 10)}
+              </span>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-950 text-slate-400 border border-slate-800 flex items-center gap-1">
+                <User className="w-2.5 h-2.5" /> Scanned by: {report.created_by || 'citizen'}
               </span>
             </div>
             <h2 className="text-xl sm:text-2xl font-bold text-white mt-1.5">
@@ -140,16 +140,56 @@ export default function ReportDetails() {
             </span>
           </div>
         </div>
+
+        <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800/80 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+          <div className="space-y-0.5">
+            <span className="text-[10px] uppercase font-mono text-slate-500 font-bold block">
+              Enforcement Status / Legal Action
+            </span>
+            <span className={`text-xs font-bold font-mono px-2 py-0.5 rounded border inline-block ${
+              report.inspector_action === 'NOTICE_ISSUED' ? 'bg-amber-950/60 border-amber-500 text-amber-300' :
+              report.inspector_action === 'SEIZED' ? 'bg-rose-950/60 border-rose-500 text-rose-300' :
+              report.inspector_action === 'RESOLVED' ? 'bg-emerald-950/60 border-emerald-500 text-emerald-300' :
+              'bg-slate-900 border-slate-700 text-slate-400'
+            }`}>
+              {report.inspector_action || 'PENDING INSPECTION'}
+            </span>
+            {report.action_notes && (
+              <p className="text-xs text-slate-300 mt-1 italic">"{report.action_notes}"</p>
+            )}
+          </div>
+
+          {report.action_by && (
+            <div className="text-right text-[11px] text-slate-400 font-mono">
+              <span>Authorized Officer: <strong className="text-slate-200">{report.action_by}</strong></span>
+              {report.action_taken_at && (
+                <span className="block text-[10px] text-slate-500">
+                  {new Date(report.action_taken_at).toLocaleString()}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Primary Statutory Report */}
+      {report.textures && Object.keys(report.textures).length > 0 && (
+        <div className="bg-slate-900 border border-slate-800 p-5 rounded-3xl space-y-3 shadow-xl">
+          <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+            <Layers className="w-4 h-4 text-indigo-400" /> Preserved 3D Evidence Mesh
+          </h4>
+          <ProductViewer3D
+            textures={report.textures}
+            geometryType="box"
+          />
+        </div>
+      )}
+
       <ComplianceReport
         compliance={compliancePayload}
         productName={report.product_name}
         onDownloadPdf={handleDownloadPDF}
       />
 
-      {/* Health & Nutri-Score Analysis */}
       {report.health_score !== undefined && (
         <HealthBadge health={healthPayload} />
       )}
