@@ -1,21 +1,34 @@
+# Web Framework & Server
 fastapi>=0.110.0
 uvicorn[standard]>=0.28.0
 python-multipart>=0.0.9
+pydantic>=2.6.0
+pydantic-settings>=2.4.0
+python-dotenv>=1.0.1
+
+# Database & Supabase PostgreSQL
+sqlalchemy>=2.0.30
+psycopg2-binary>=2.9.9
+
+# Security & Authentication
+python-jose[cryptography]>=3.3.0
+bcrypt>=4.2.0
+
+# Image Processing & Computer Vision
 pillow>=10.2.0
-numpy>=1.26.0
+numpy>=1.26.0,<2.0.0
 opencv-python-headless>=4.9.0.80
-paddlepaddle>=2.6.0
-paddleocr>=2.7.3
-rembg>=2.0.57
+
+# Lightweight CPU OCR Engine & Background Removal
+rapidocr-onnxruntime>=1.3.20
+onnxruntime>=1.17.0
+rembg[cpu]>=2.0.57
+
+# 3D Mesh Generation & Geometry Processing
 trimesh>=4.2.0
 scipy>=1.12.0
-pydantic>=2.6.0
+shapely>=2.0.0
+mapbox-earcut>=1.0.1
+
+# PDF Notice Generation
 reportlab>=4.1.0
-"rembg[cpu]"
-onnxruntime
-mapbox-earcut 
-shapely
-easyocr
-pytesseract
-rapidocr-onnxruntime
-psycopg2-binary
