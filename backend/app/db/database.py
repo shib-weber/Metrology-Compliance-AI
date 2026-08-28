@@ -18,15 +18,18 @@ else:
         SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 if "sqlite" in SQLALCHEMY_DATABASE_URL:
-    engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
+    engine = create_engine(
+        SQLALCHEMY_DATABASE_URL, 
+        connect_args={"check_same_thread": False}
+    )
 else:
     engine = create_engine(
         SQLALCHEMY_DATABASE_URL,
-        pool_size=2,
-        max_overflow=3,
+        pool_size=3,
+        max_overflow=5,
         pool_pre_ping=True,
         pool_recycle=300,
-        connect_args={"connect_timeout": 5}
+        connect_args={"connect_timeout": 10}
     )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -76,11 +79,13 @@ class DBInspection(Base):
     owner = relationship("DBUser", back_populates="inspections")
 
 
-# Auto-create tables gracefully without blocking server boot
-try:
-    Base.metadata.create_all(bind=engine)
-except Exception as e:
-    print(f"[DB Startup Warning]: {e}")
+def init_db():
+    """Initializes tables safely without blocking top-level imports."""
+    try:
+        Base.metadata.create_all(bind=engine)
+        print("[DB Status]: Database schemas synced successfully.")
+    except Exception as e:
+        print(f"[DB Warning]: Schema auto-creation bypassed: {e}")
 
 
 def get_db():
