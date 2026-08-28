@@ -1,6 +1,7 @@
 import json
 from typing import List
 from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException, status
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from db.database import get_db, DBInspection
@@ -13,6 +14,7 @@ from engine.ocr_engine import (
 )
 from engine.rules_2011 import run_metrology_audit
 from engine.nutri_engine import calculate_nutri_health
+from engine.mesh_reconstructor import DigitalTwin3DGenerator
 
 router = APIRouter(prefix="/scan", tags=["Scan"])
 
@@ -29,17 +31,15 @@ async def analyze_commodity(
         )
 
     parsed_ids = [p.strip() for p in panel_ids.split(",") if p.strip()]
-    
     cleaned_textures = {}
     panel_extracted_texts = {}
     primary_cropped_bytes = None
     primary_vision_meta = None
 
-    # 1. Background cleanup & text extraction per face
+    # 1. Clean background and extract OCR per face
     for idx, file in enumerate(files):
         panel_id = parsed_ids[idx] if idx < len(parsed_ids) else f"panel_{idx + 1}"
         raw_bytes = await file.read()
-
         if not raw_bytes:
             continue
 
@@ -56,52 +56,24 @@ async def analyze_commodity(
             cropped_bytes = raw_bytes
             cleaned_textures[panel_id] = ""
 
-        # Extract OCR text for this panel
+        # On-device PaddleOCR
         extracted_text = extract_raw_text_single_image(cropped_bytes, panel_id)
         panel_extracted_texts[panel_id] = extracted_text
 
-    if not primary_cropped_bytes and not panel_extracted_texts:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Package images could not be processed."
-        )
-
-    # 2. Synthesize declarations across all faces
+    # 2. Synthesize multi-face declarations
     extracted = synthesize_statutory_declarations(panel_extracted_texts)
-    
-    # Trigger fallback if synthesis marked the batch as illegible
+
     if not extracted or not extracted.get("is_legible", True):
         if primary_cropped_bytes:
-            fallback_res = extract_label_data(primary_cropped_bytes)
-            if fallback_res and fallback_res.get("is_legible", False):
-                extracted = fallback_res
+            extracted = extract_label_data(primary_cropped_bytes)
 
-    # 3. Build a graceful fallback payload if OCR text was completely blank
-    if not extracted or not extracted.get("is_legible", True):
-        extracted = {
-            "is_legible": True,
-            "category": "NON_FOOD",
-            "product_name": "Unidentified Commodity (Unreadable / Missing Declarations)",
-            "manufacturer_details": None,
-            "generic_name": None,
-            "net_quantity": None,
-            "mrp": None,
-            "unit_sale_price": None,
-            "mfg_date": None,
-            "expiry_date": None,
-            "consumer_care": None,
-            "country_of_origin": None,
-            "measured_font_height_mm": 1.5,
-            "nutrition": {"is_applicable": False}
-        }
-
-    # 4. Rule 7 Font & PDP Ratio Check
+    # 3. Rule 7 Font & PDP Ratio Check
     font_audit = audit_font_and_pdp_compliance(
         pdp_area_sq_cm=primary_vision_meta.get("pdp_area_sq_cm", 100.0) if primary_vision_meta else 100.0,
-        detected_font_mm=extracted.get("measured_font_height_mm", 1.5)
+        detected_font_mm=extracted.get("measured_font_height_mm", 2.0)
     )
 
-    # 5. Statutory Rules Evaluation (Legal Metrology Rules, 2011)
+    # 4. Statutory Rules Evaluation (Legal Metrology Rules, 2011)
     compliance = run_metrology_audit(extracted)
     if font_audit.get("font_compliance_status") == "NON-COMPLIANT" and font_audit.get("violation"):
         compliance["violations"].append(font_audit["violation"])
@@ -109,12 +81,12 @@ async def analyze_commodity(
         compliance["compliance_score"] = max(0, compliance.get("compliance_score", 100) - 15)
         compliance["status"] = "NON-COMPLIANT"
 
-    # 6. Nutrition Score (Edible Products Only)
+    # 5. Nutrition Score
     nutrition_info = extracted.get("nutrition", {})
     health = calculate_nutri_health(nutrition_info) if nutrition_info.get("is_applicable") else None
     product_name = extracted.get("product_name") or "Packaged Commodity"
 
-    # 7. Persist to Database
+    # 6. Persist to Database
     db_item = DBInspection(
         product_name=product_name,
         status=compliance.get("status", "NON-COMPLIANT"),
@@ -130,7 +102,6 @@ async def analyze_commodity(
     db.commit()
     db.refresh(db_item)
 
-    # 8. Return response
     return {
         "id": db_item.id,
         "product_name": db_item.product_name,
@@ -145,3 +116,17 @@ async def analyze_commodity(
         "vision_meta": primary_vision_meta,
         "clean_textures": cleaned_textures
     }
+
+
+@router.post("/generate-digital-twin")
+async def generate_digital_twin(file: UploadFile = File(...)):
+    """
+    Builds and returns a true customized 3D GLB model conforming to the package silhouette.
+    """
+    raw_bytes = await file.read()
+    glb_data = DigitalTwin3DGenerator.generate_mesh_glb(raw_bytes)
+    return Response(
+        content=glb_data,
+        media_type="model/gltf-binary",
+        headers={"Content-Disposition": "attachment; filename=digital_twin.glb"}
+    )

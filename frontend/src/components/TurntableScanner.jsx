@@ -138,8 +138,6 @@ export default function TurntableScanner({ onComplete }) {
     const currentId = currentPanel.id;
     const updated = { ...captured, [currentId]: { file, url } };
     setCaptured(updated);
-
-    // Camera will stop so preview stays visible for current panel
     if (cameraActive) stopCamera();
   };
 
@@ -166,6 +164,7 @@ export default function TurntableScanner({ onComplete }) {
     fd.append('panel_ids', panelIds.join(','));
 
     try {
+      // 1. Audit Analysis
       const res = await fetch('http://localhost:8000/api/scan/analyze', {
         method: 'POST',
         body: fd
@@ -176,7 +175,22 @@ export default function TurntableScanner({ onComplete }) {
         throw new Error(data.detail || 'Audit rejected by statutory inspection engine');
       }
 
-      console.log(data.clean_textures);
+      // 2. Fetch True 3D Digital Twin Mesh (.glb)
+      let glbUrl = null;
+      const primaryFile = allPanels.front?.file || allPanels[panelKeys[0]]?.file;
+      if (primaryFile) {
+        const glbFd = new FormData();
+        glbFd.append('file', primaryFile);
+        const glbRes = await fetch('http://localhost:8000/api/scan/generate-digital-twin', {
+          method: 'POST',
+          body: glbFd
+        });
+        if (glbRes.ok) {
+          const glbBlob = await glbRes.blob();
+          glbUrl = URL.createObjectURL(glbBlob);
+        }
+      }
+
       const cleanMap = data.clean_textures || {};
       const fallbackClean = cleanMap.front || Object.values(cleanMap)[0] || allPanels.front?.url;
 
@@ -189,7 +203,13 @@ export default function TurntableScanner({ onComplete }) {
         bottom: { url: cleanMap.bottom || fallbackClean }
       };
 
-      onComplete({ ...data, textures: resolvedTextures, geometry: selectedShape, raw_captures: allPanels });
+      onComplete({ 
+        ...data, 
+        glbUrl,
+        textures: resolvedTextures, 
+        geometry: selectedShape, 
+        raw_captures: allPanels 
+      });
       stopCamera();
     } catch (err) {
       setErrorMessage(err.message);
@@ -245,8 +265,6 @@ export default function TurntableScanner({ onComplete }) {
 
       {/* Main Viewport */}
       <div className="w-full aspect-[4/3] bg-slate-950 border border-slate-800 rounded-xl relative overflow-hidden flex items-center justify-center">
-        
-        {/* Video stream layer */}
         <video
           ref={videoRef}
           autoPlay
@@ -255,7 +273,6 @@ export default function TurntableScanner({ onComplete }) {
           className={`absolute inset-0 w-full h-full object-cover ${cameraActive ? 'block' : 'hidden'}`}
         />
 
-        {/* Live Alignment Overlay */}
         {cameraActive && (
           <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-4 z-10">
             <div className="w-[65%] h-[85%] border-2 border-dashed border-emerald-400 rounded-xl shadow-[0_0_0_9999px_rgba(0,0,0,0.55)] flex flex-col justify-between p-2.5">
@@ -269,7 +286,6 @@ export default function TurntableScanner({ onComplete }) {
           </div>
         )}
 
-        {/* Image Preview Layer */}
         {!cameraActive && currentCapture && (
           <div className="relative w-full h-full flex flex-col items-center justify-center p-2 z-10 bg-slate-950">
             <img
@@ -284,7 +300,6 @@ export default function TurntableScanner({ onComplete }) {
           </div>
         )}
 
-        {/* Empty Standby State */}
         {!cameraActive && !currentCapture && (
           <div className="w-full px-4 text-center flex flex-col items-center justify-center space-y-2 z-10">
             <div className="p-3 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
@@ -296,7 +311,7 @@ export default function TurntableScanner({ onComplete }) {
         )}
       </div>
 
-      {/* Panel Buttons */}
+      {/* Panel Selectors */}
       <div className="space-y-1.5">
         <div className="flex justify-between items-center text-[11px] text-slate-400 px-1">
           <span>Panels</span>
@@ -328,7 +343,7 @@ export default function TurntableScanner({ onComplete }) {
         </div>
       </div>
 
-      {/* Capture Action Controls */}
+      {/* Controls */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
         {!cameraActive ? (
           <button
@@ -383,7 +398,7 @@ export default function TurntableScanner({ onComplete }) {
             className="w-full bg-indigo-600/30 hover:bg-indigo-600 border border-indigo-500/50 text-indigo-200 hover:text-white py-2.5 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-2"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${scanning ? 'animate-spin' : ''}`} />
-            {scanning ? 'Extracting Text Face-by-Face...' : `Scan & Audit ${capturedCount} Captured Faces`}
+            {scanning ? 'Auditing & Reconstructing Twin...' : `Scan & Audit ${capturedCount} Captured Faces`}
           </button>
         </div>
       )}

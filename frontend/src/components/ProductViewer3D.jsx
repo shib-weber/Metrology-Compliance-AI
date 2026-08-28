@@ -1,39 +1,38 @@
-import React, { useRef, useMemo } from 'react';
+import React, { useRef, useMemo, Suspense } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls, Stage } from '@react-three/drei';
+import { OrbitControls, Stage, useGLTF, Center } from '@react-three/drei';
 import * as THREE from 'three';
 
-function PackagingMesh({ textures, geometryType = 'box' }) {
+function GLBDigitalTwin({ glbUrl }) {
+  const { scene } = useGLTF(glbUrl);
   const meshRef = useRef();
 
-  // Load and configure texture maps
+  useFrame((_, delta) => {
+    if (meshRef.current) {
+      meshRef.current.rotation.y += delta * 0.35;
+    }
+  });
+
+  return <primitive ref={meshRef} object={scene} />;
+}
+
+function StandardParametricMesh({ textures, geometryType = 'box' }) {
+  const meshRef = useRef();
   const textureLoader = useMemo(() => new THREE.TextureLoader(), []);
 
   const materials = useMemo(() => {
     const faceKeys = ['right', 'left', 'top', 'bottom', 'front', 'back'];
-    
     return faceKeys.map((face) => {
       const src = textures?.[face]?.url || textures?.[face] || '';
       if (!src) {
-        return new THREE.MeshStandardMaterial({ color: '#1e293b', roughness: 0.5 });
+        return new THREE.MeshStandardMaterial({ color: '#0f172a', roughness: 0.6 });
       }
-
       const tex = textureLoader.load(src);
       tex.colorSpace = THREE.SRGBColorSpace;
-      tex.minFilter = THREE.LinearFilter;
-      tex.magFilter = THREE.LinearFilter;
-      tex.wrapS = THREE.ClampToEdgeWrapping;
-      tex.wrapT = THREE.ClampToEdgeWrapping;
-
-      return new THREE.MeshStandardMaterial({
-        map: tex,
-        roughness: 0.3,
-        metalness: 0.05
-      });
+      return new THREE.MeshStandardMaterial({ map: tex, roughness: 0.3, metalness: 0.05 });
     });
   }, [textures, textureLoader]);
 
-  // Gentle turntable rotation
   useFrame((_, delta) => {
     if (meshRef.current) {
       meshRef.current.rotation.y += delta * 0.35;
@@ -53,17 +52,24 @@ function PackagingMesh({ textures, geometryType = 'box' }) {
   );
 }
 
-export default function ProductViewer3D({ textures, geometryType = 'box' }) {
+export default function ProductViewer3D({ textures, geometryType = 'box', glbUrl = null }) {
   return (
     <div className="w-full h-80 bg-slate-950 rounded-2xl overflow-hidden border border-slate-800 shadow-2xl relative">
       <Canvas camera={{ position: [0, 0, 4.5], fov: 45 }}>
         <ambientLight intensity={0.7} />
         <directionalLight position={[5, 10, 5]} intensity={1.2} />
-        <pointLight position={[-5, -5, -5]} intensity={0.4} />
         
-        <Stage intensity={0.6} environment="city" adjustCamera={false}>
-          <PackagingMesh textures={textures} geometryType={geometryType} />
-        </Stage>
+        <Suspense fallback={null}>
+          <Stage intensity={0.6} environment="city" adjustCamera={false}>
+            {glbUrl ? (
+              <Center>
+                <GLBDigitalTwin glbUrl={glbUrl} />
+              </Center>
+            ) : (
+              <StandardParametricMesh textures={textures} geometryType={geometryType} />
+            )}
+          </Stage>
+        </Suspense>
         
         <OrbitControls enableZoom={true} enablePan={false} autoRotate={false} />
       </Canvas>

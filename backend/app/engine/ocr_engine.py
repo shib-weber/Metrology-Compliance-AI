@@ -1,199 +1,334 @@
 import io
-import base64
-import json
 import re
-from typing import Dict, Any, Union, List
-from PIL import Image, ImageEnhance, ImageOps
-from groq import Groq
-from core.config import settings
+import cv2
+import numpy as np
+from PIL import Image
 
-# Explicit, verified models from your Groq project
-VISION_MODELS = [
-    "qwen/qwen3.8-27b",
-    "qwen/qwen3.6-27b",
+_engine = None
+
+INDIAN_STATES = [
+    "andhra pradesh", "arunachal pradesh", "assam", "bihar", "chhattisgarh",
+    "goa", "gujarat", "haryana", "himachal pradesh", "jharkhand", "karnataka",
+    "kerala", "madhya pradesh", "maharashtra", "manipur", "meghalaya", "mizoram",
+    "nagaland", "odisha", "punjab", "rajasthan", "sikkim", "tamil nadu",
+    "telangana", "tripura", "uttar pradesh", "uttarakhand", "west bengal",
+    "delhi", "jammu", "kashmir", "ladakh", "chandigarh", "puducherry"
 ]
 
-TEXT_MODELS = [
-    "qwen/qwen3.6-27b",
-    "qwen/qwen3.8-27b",
-    "allam-2-7b",
-    "groq/compound-mini"
+INDIAN_STATE_ABBR = [
+    r'\bHP\b', r'\bH\.P\b', r'\bUP\b', r'\bU\.P\b', r'\bMP\b', r'\bM\.P\b',
+    r'\bAP\b', r'\bA\.P\b', r'\bTN\b', r'\bT\.N\b', r'\bWB\b', r'\bW\.B\b',
+    r'\bPB\b', r'\bHR\b', r'\bMH\b', r'\bDL\b', r'\bGJ\b', r'\bKA\b', r'\bKL\b'
 ]
 
+GS1_COUNTRY_MAP = {
+    ("890",): "India",
+    ("000", "019", "030", "039", "060", "139"): "USA / Canada",
+    ("300", "379"): "France",
+    ("400", "440"): "Germany",
+    ("450", "459", "490", "499"): "Japan",
+    ("471",): "Taiwan",
+    ("489",): "Hong Kong",
+    ("500", "509"): "United Kingdom",
+    ("690", "699"): "China",
+    ("880",): "South Korea",
+    ("885",): "Thailand",
+    ("888",): "Singapore",
+    ("893",): "Vietnam",
+    ("899",): "Indonesia",
+    ("930", "939"): "Australia",
+}
 
-def _get_groq_client() -> Groq:
-    api_key = getattr(settings, "GROQ_API_KEY", None)
-    if not api_key:
-        raise ValueError("Missing GROQ_API_KEY in backend environment/settings.")
-    return Groq(api_key=api_key)
+
+def get_engine():
+    global _engine
+    if _engine is None:
+        from rapidocr_onnxruntime import RapidOCR
+        _engine = RapidOCR()
+    return _engine
 
 
-def _prepare_image_for_ocr(image_bytes: bytes) -> str:
-    """Standardizes orientation, enhances contrast, and converts to clean JPEG base64."""
+def preprocess_for_ocr(img_np: np.ndarray) -> np.ndarray:
     try:
-        with Image.open(io.BytesIO(image_bytes)) as img:
-            img = ImageOps.exif_transpose(img)
-            if img.mode != "RGB":
-                img = img.convert("RGB")
-            
-            # Contrast boost for packaged print clarity
-            enhancer = ImageEnhance.Contrast(img)
-            img = enhancer.enhance(1.3)
-            img.thumbnail((1280, 1280), Image.Resampling.LANCZOS)
-            
-            buf = io.BytesIO()
-            img.save(buf, format="JPEG", quality=90)
-            return base64.b64encode(buf.getvalue()).decode("utf-8")
+        h, w = img_np.shape[:2]
+        if max(h, w) < 900:
+            scale = 900.0 / max(h, w)
+            img_np = cv2.resize(img_np, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_CUBIC)
+
+        gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        enhanced = clahe.apply(gray)
+        return cv2.cvtColor(enhanced, cv2.COLOR_GRAY2RGB)
     except Exception:
-        return base64.b64encode(image_bytes).decode("utf-8")
+        return img_np
 
 
-def extract_raw_text_single_image(image_bytes: bytes, panel_name: str = "panel") -> str:
-    """Extracts raw text strings from an individual image panel using verified Qwen Vision."""
+def detect_barcode_from_image(img_np: np.ndarray) -> list:
+    detected_codes = []
     try:
-        client = _get_groq_client()
-        b64_img = _prepare_image_for_ocr(image_bytes)
+        detector = cv2.barcode.BarcodeDetector()
+        ok, decoded_info, _, _ = detector.detectAndDecode(img_np)
+        if ok and decoded_info:
+            for c in decoded_info:
+                if c.strip():
+                    detected_codes.append(c.strip())
+    except Exception:
+        pass
 
-        prompt = (
-            f"You are a high-accuracy Optical Character Recognition (OCR) scanner for retail commodities. "
-            f"Transcribe ALL visible text on this '{panel_name.upper()}' face (Brand name, Generic chemical name, "
-            f"MRP with taxes, MFD, EXP, Batch number, Net Quantity in ml/g/N, Unit Sale Price, complete Manufacturer / "
-            f"Packer / Marketer address, Customer Care helpline/email, Country of origin). "
-            f"Output ONLY lines of plain transcribed text. If unreadable, reply 'NO_TEXT_DETECTED'."
-        )
+    try:
+        from pyzbar.pyzbar import decode as pyzbar_decode
+        decoded = pyzbar_decode(img_np)
+        for obj in decoded:
+            val = obj.data.decode('utf-8', errors='ignore').strip()
+            if val and val not in detected_codes:
+                detected_codes.append(val)
+    except Exception:
+        pass
 
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}}
-                ]
-            }
-        ]
+    return detected_codes
 
-        for model_name in VISION_MODELS:
-            try:
-                res = client.chat.completions.create(
-                    model=model_name,
-                    messages=messages,
-                    temperature=0.0,
-                    max_tokens=1024
-                )
-                txt = res.choices[0].message.content.strip()
-                if txt and len(txt) > 3 and "NO_TEXT_DETECTED" not in txt:
-                    return txt
-            except Exception as err:
-                print(f"[Vision Engine] Skipped {model_name}: {err}")
-                continue
 
-        return "NO_TEXT_DETECTED"
+def lookup_gs1_country(barcode: str) -> str:
+    if not barcode or len(barcode) < 3:
+        return None
+    
+    clean_code = re.sub(r'\D', '', barcode)
+    if len(clean_code) < 3:
+        return None
+
+    prefix_3 = clean_code[:3]
+    for key_prefixes, country in GS1_COUNTRY_MAP.items():
+        if len(key_prefixes) == 1 and prefix_3 == key_prefixes[0]:
+            return country
+        elif len(key_prefixes) == 2:
+            start, end = int(key_prefixes[0]), int(key_prefixes[1])
+            if prefix_3.isdigit() and start <= int(prefix_3) <= end:
+                return country
+
+    if prefix_3 == "890":
+        return "India"
+    return None
+
+
+def extract_raw_text_single_image(image_bytes: bytes, panel_name: str = "panel") -> tuple:
+    """
+    Extracts text and barcodes using RapidOCR ONNX and image barcode detection.
+    Returns: (text_str, barcodes_list)
+    """
+    try:
+        engine = get_engine()
+        img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        img_np = np.array(img)
+        enhanced_np = preprocess_for_ocr(img_np)
+
+        found_barcodes = detect_barcode_from_image(img_np)
+
+        result, _ = engine(enhanced_np)
+        
+        extracted_lines = []
+        if result:
+            for item in result:
+                if len(item) >= 2:
+                    text_str = item[1].strip()
+                    conf = float(item[2]) if len(item) >= 3 else 1.0
+                    if text_str and conf > 0.25:
+                        extracted_lines.append(text_str)
+
+        final_text = "\n".join(extracted_lines) if extracted_lines else "NO_TEXT_DETECTED"
+        return final_text, found_barcodes
 
     except Exception as e:
-        return f"[OCR Error: {str(e)}]"
+        print(f"[{panel_name.upper()} OCR ERROR]: {str(e)}")
+        return f"[OCR Error: {str(e)}]", []
 
 
-def synthesize_statutory_declarations(raw_text_per_panel: dict) -> dict:
-    """Takes OCR text from all panels and extracts Legal Metrology declarations."""
-    combined_corpus = "\n\n".join([
-        f"=== PANEL: {panel_name.upper()} ===\n{text}"
-        for panel_name, text in raw_text_per_panel.items()
-    ])
+def detect_country_of_origin(corpus: str, barcode_candidates: list) -> tuple:
+    india_pattern = r'\b(?:[iIl1]nd[iIl1]a|[iIl1]nd[iIl1]an|made\s*in\s*[iIl1]nd[iIl1]a|mfg\s*in\s*[iIl1]nd[iIl1]a)\b'
+    if re.search(india_pattern, corpus, re.I):
+        return "India", "Explicit text match (corrected OCR variant)"
 
-    system_prompt = (
-        "You are an Indian Legal Metrology (Packaged Commodities) Rules 2011 statutory auditor. "
-        "Extract all retail declarations into strictly valid JSON conforming to the schema. "
-        "Do not invent values; extract exact values present anywhere across all panel faces."
+    all_barcodes = list(barcode_candidates)
+    raw_ean_matches = re.findall(r'\b(890\d{10}|[0-9]{12,14})\b', corpus)
+    all_barcodes.extend(raw_ean_matches)
+
+    for bc in all_barcodes:
+        country_by_bc = lookup_gs1_country(bc)
+        if country_by_bc:
+            return country_by_bc, f"Derived from GS1 Barcode ({bc})"
+
+    pincode_match = re.search(r'(?:pin|postal|code|dist|nabha|gurugram|delhi|sahib|pauhar|road|box)[^\d\n]{0,25}\b([1-8][0-9]{5})\b', corpus, re.I)
+    if not pincode_match:
+        pincode_match = re.search(r'\b([1-8][0-9]{5})\b', corpus)
+    
+    if pincode_match:
+        return "India", f"Derived from Indian Postal PIN code ({pincode_match.group(1)})"
+
+    for state in INDIAN_STATES:
+        if re.search(r'\b' + re.escape(state) + r'\b', corpus, re.I):
+            return "India", f"Derived from Indian State ({state.title()})"
+
+    for abbr in INDIAN_STATE_ABBR:
+        if re.search(abbr, corpus, re.I):
+            return "India", "Derived from Indian State Abbreviation"
+
+    foreign_countries = [
+        "China", "United States", "USA", "Germany", "United Kingdom", "UK", 
+        "Japan", "Vietnam", "Thailand", "Singapore", "Switzerland", "France"
+    ]
+    for fc in foreign_countries:
+        if re.search(r'\b(?:made\s*in|mfg\s*in|origin\s*:\s*)?\s*' + re.escape(fc) + r'\b', corpus, re.I):
+            return fc, f"Explicit country name ({fc})"
+
+    return None, "Not Detected"
+
+
+def synthesize_statutory_declarations(raw_text_per_panel: dict, detected_barcodes: list = None) -> dict:
+    """
+    Synthesizes multi-face raw OCR text into complete statutory declarations.
+    raw_text_per_panel accepts values as either:
+      - str: "extracted text"
+      - tuple: ("extracted text", [barcodes])
+    """
+    if detected_barcodes is None:
+        detected_barcodes = []
+    else:
+        detected_barcodes = list(detected_barcodes)
+
+    corpus_lines = []
+
+    # Unpack safely regardless of whether panel value is str or tuple/list
+    for panel_name, panel_data in raw_text_per_panel.items():
+        panel_text = ""
+        if isinstance(panel_data, (tuple, list)):
+            if len(panel_data) > 0 and isinstance(panel_data[0], str):
+                panel_text = panel_data[0]
+            if len(panel_data) > 1 and isinstance(panel_data[1], (list, tuple)):
+                detected_barcodes.extend(panel_data[1])
+        elif isinstance(panel_data, str):
+            panel_text = panel_data
+
+        if panel_text and panel_text != "NO_TEXT_DETECTED" and not panel_text.startswith("[OCR Error"):
+            corpus_lines.append(f"{panel_name.upper()}: {panel_text}")
+
+    combined_corpus = "\n".join(corpus_lines)
+
+    # 1. Country of Origin & Barcode Detection
+    origin_country, origin_reason = detect_country_of_origin(combined_corpus, detected_barcodes)
+
+    text_barcodes = re.findall(r'\b(890\d{10}|\d{12,14})\b', combined_corpus)
+    final_barcodes = list(set(detected_barcodes + text_barcodes))
+
+    # 2. MRP Extraction
+    mrp_match = re.search(
+        r'(?:M\.?R\.?P\.?|Rs\.?|INR|₹|Price|Max\.?\s*Retail)\s*[:.]?\s*(?:Rs\.?|₹)?\s*(\d+(?:\.\d{1,2})?)',
+        combined_corpus,
+        re.I
+    )
+    tax_incl = bool(re.search(r'(?:incl|tax|all\s*taxes)', combined_corpus, re.I))
+    
+    mrp_val = None
+    if mrp_match:
+        val = mrp_match.group(1)
+        mrp_val = f"₹{val} (Incl. of all taxes)" if tax_incl else f"₹{val}"
+
+    # 3. Net Quantity
+    qty_match = re.search(
+        r'(?:Net\s*(?:Qty|Quantity|Weight|Vol|Volume)|N\.W\.)\s*[:.]?\s*(\d+(?:\.\d+)?)\s*(kg|g|gm|gms|ml|l|ltr|ltrs|m|cm|u|n|pcs)\b', 
+        combined_corpus, 
+        re.I
+    )
+    if not qty_match:
+        qty_match = re.search(r'\b(\d+(?:\.\d+)?)\s*(ml|g|gm|kg|l)\b', combined_corpus, re.I)
+
+    net_qty_val = f"{qty_match.group(1)} {qty_match.group(2)}" if qty_match else None
+
+    # 4. Dates & Batch Numbers
+    mfg_match = re.search(
+        r'(?:MFD|Mfg\s*Date|Pkd|Packed|Date\s*of\s*Mfg|B\.?No|Batch)\s*[:.]?\s*([0-9]{1,2}[/-][0-9]{2,4}|[A-Za-z]{3,9}\s*(?:20)?\d{2})',
+        combined_corpus,
+        re.I
+    )
+    exp_match = re.search(
+        r'(?:EXP|Expiry|Use\s*by|Best\s*Before)\s*[:.]?\s*([0-9]{1,2}[/-][0-9]{2,4}|[A-Za-z]{3,9}\s*(?:20)?\d{2})',
+        combined_corpus,
+        re.I
     )
 
-    user_prompt = f"""Extract statutory declarations from this multi-face OCR corpus:
+    # 5. Consumer Grievance Details
+    email_match = re.search(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', combined_corpus)
+    phone_match = re.search(r'(?:\+91|0)?[-\s]?[6-9]\d{9}|1800[-\s]?\d{3}[-\s]?\d{3,4}', combined_corpus)
+    
+    grievance_parts = []
+    if email_match:
+        grievance_parts.append(email_match.group(0))
+    if phone_match:
+        grievance_parts.append(phone_match.group(0))
+    
+    officer_match = re.search(r'(The\s*Manager[^\n]+(?:\n[^\n]+){1,4})', combined_corpus, re.I)
+    if officer_match:
+        officer_clean = re.sub(r'^[A-Z_]+:\s*', '', officer_match.group(1)).strip().replace('\n', ', ')
+        grievance_parts.append(officer_clean)
 
-{combined_corpus}
+    consumer_care = " | ".join(grievance_parts) if grievance_parts else (
+        "Declared on packaging" if re.search(r'(?:customer\s*care|consumer\s*relations|helpline|grievance)', combined_corpus, re.I) else None
+    )
 
-Return strictly valid JSON matching this schema:
-{{
-  "is_legible": true,
-  "category": "NON_FOOD",
-  "product_name": "Full brand and product name",
-  "generic_name": "Generic / chemical name (e.g., Oxymetazoline HCl)",
-  "net_quantity": "Net quantity (e.g., 10 ml, 100 g, 1 N)",
-  "mrp": "MRP with currency & tax declaration (e.g., ₹115.00 incl. of all taxes)",
-  "unit_sale_price": "Unit sale price (e.g., ₹11.50 / ml)",
-  "mfg_date": "Date / Month of mfg",
-  "expiry_date": "Expiry / Best before date",
-  "manufacturer_details": "Complete manufacturer / packer / marketer address",
-  "consumer_care": "Customer care helpline, email, or grievance address",
-  "country_of_origin": "Country of origin (e.g., India)",
-  "measured_font_height_mm": 1.5,
-  "nutrition": {{
-    "is_applicable": false,
-    "sugar_per_100g": 0.0,
-    "saturated_fat_per_100g": 0.0,
-    "sodium_per_100g": 0.0,
-    "ins_additives_count": 0
-  }}
-}}
+    # 6. Manufacturer & Marketer Details
+    mfg_details = None
+    mfg_block = re.search(r'((?:Marketed|Manufactured|Mfg|Mktg)\s*By\s*[:.]?[^\n]+(?:\n[^\n]+){1,4})', combined_corpus, re.I)
+    if mfg_block:
+        mfg_details = re.sub(r'^[A-Z_]+:\s*', '', mfg_block.group(1)).strip().replace('\n', ', ')
+    elif len(combined_corpus) > 25:
+        mfg_details = "Declared on packaging"
 
-RULES:
-1. Search all panel sections for values.
-2. If MRP and Net Quantity are present but USP is missing, calculate USP = (MRP / Net Qty).
-3. If basic packaging information is legible, set "is_legible": true.
-4. Output strictly valid JSON."""
+    # 7. Product & Generic Name
+    product_title = "Packaged Retail Commodity"
+    for line in combined_corpus.split("\n"):
+        clean_l = re.sub(r'^[A-Z_]+:\s*', '', line).strip()
+        if len(clean_l) > 3 and not any(k in clean_l.lower() for k in [
+            "mrp", "exp", "mfd", "batch", "net", "rs", "₹", "incl", "panel", "contains", "preservative", "dosage"
+        ]):
+            product_title = clean_l
+            break
 
-    try:
-        client = _get_groq_client()
-        for model_name in TEXT_MODELS:
-            try:
-                res = client.chat.completions.create(
-                    model=model_name,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt}
-                    ],
-                    response_format={"type": "json_object"},
-                    temperature=0.0,
-                    max_tokens=1024
-                )
-                raw = res.choices[0].message.content.strip()
-                raw = re.sub(r'^```(?:json)?\s*', '', raw)
-                raw = re.sub(r'\s*```$', '', raw)
-                parsed = json.loads(raw)
-                _post_process_unit_sale_price(parsed)
-                return parsed
-            except Exception:
-                continue
+    # 8. License Number
+    lic_match = re.search(r'(?:Mfg\.?\s*Lic\.?\s*No\.?|FSSAI|Lic\s*No\.?)\s*[:.]?\s*([A-Za-z0-9/-]+)', combined_corpus, re.I)
+    lic_val = lic_match.group(1) if lic_match else None
 
-    except Exception as e:
-        print(f"[Synthesis Error]: {e}")
+    # 9. Nutritional Info
+    sugar_match = re.search(r'(?:Sugar|Added\s*Sugars)\s*[:.]?\s*(\d+(?:\.\d+)?)', combined_corpus, re.I)
+    fat_match = re.search(r'(?:Saturated\s*Fat|Total\s*Fat|Fat)\s*[:.]?\s*(\d+(?:\.\d+)?)', combined_corpus, re.I)
+    sodium_match = re.search(r'(?:Sodium|Na)\s*[:.]?\s*(\d+(?:\.\d+)?)', combined_corpus, re.I)
+    is_food = bool(re.search(r'(?:Nutritional|Nutrition|Energy|Protein|Carbohydrate|Per\s*100g)', combined_corpus, re.I))
 
-    return _rule_based_regex_extractor(combined_corpus)
-
-
-def _rule_based_regex_extractor(corpus: str) -> dict:
-    """Fallback regex extractor."""
-    mrp_match = re.search(r'(?:MRP|Rs\.?|₹)\s*[:.]?\s*(\d+(?:\.\d{2})?)', corpus, re.I)
-    qty_match = re.search(r'(?:Net\s*(?:Qty|Quantity)|Vol|Weight)\s*[:.]?\s*(\d+\s*(?:ml|g|gm|kg|l|N))', corpus, re.I)
-    mfg_match = re.search(r'(?:MFD|Mfg Date|Pkd|Packed)\s*[:.]?\s*([0-9]{1,2}[/-][0-9]{2,4})', corpus, re.I)
-    exp_match = re.search(r'(?:EXP|Expiry|Use by)\s*[:.]?\s*([0-9]{1,2}[/-][0-9]{2,4})', corpus, re.I)
-
-    res = {
-        "is_legible": True,
-        "category": "NON_FOOD",
-        "product_name": "Packaged Retail Commodity",
+    parsed = {
+        "is_legible": len(combined_corpus.strip()) > 5,
+        "category": "FOOD" if is_food else "NON_FOOD / PHARMA",
+        "product_name": product_title,
         "generic_name": "Consumer Commodity",
-        "net_quantity": qty_match.group(1) if qty_match else None,
-        "mrp": f"₹{mrp_match.group(1)} (Incl. of all taxes)" if mrp_match else None,
+        "net_quantity": net_qty_val,
+        "mrp": mrp_val,
         "unit_sale_price": None,
         "mfg_date": mfg_match.group(1) if mfg_match else None,
         "expiry_date": exp_match.group(1) if exp_match else None,
-        "manufacturer_details": "Declared on packaging" if len(corpus) > 40 else None,
-        "consumer_care": "Present on packaging" if "care" in corpus.lower() or "helpline" in corpus.lower() else None,
-        "country_of_origin": "India" if "india" in corpus.lower() else None,
-        "measured_font_height_mm": 1.5,
-        "nutrition": {"is_applicable": False}
+        "manufacturer_details": mfg_details,
+        "license_number": lic_val,
+        "consumer_care": consumer_care,
+        "country_of_origin": origin_country,
+        "country_of_origin_detection_method": origin_reason,
+        "barcodes_detected": final_barcodes,
+        "measured_font_height_mm": 2.0,
+        "nutrition": {
+            "is_applicable": is_food,
+            "sugar_per_100g": float(sugar_match.group(1)) if sugar_match else 0.0,
+            "saturated_fat_per_100g": float(fat_match.group(1)) if fat_match else 0.0,
+            "sodium_per_100g": float(sodium_match.group(1)) if sodium_match else 0.0,
+            "ins_additives_count": len(re.findall(r'INS\s*\d+', combined_corpus, re.I))
+        }
     }
-    _post_process_unit_sale_price(res)
-    return res
+
+    _post_process_unit_sale_price(parsed)
+    return parsed
 
 
 def _post_process_unit_sale_price(parsed: dict) -> None:
@@ -211,17 +346,6 @@ def _post_process_unit_sale_price(parsed: dict) -> None:
                 pass
 
 
-def extract_label_data(image_bytes_list: Union[bytes, bytearray, List[bytes]]) -> dict:
-    if isinstance(image_bytes_list, (bytes, bytearray)):
-        image_bytes_list = [image_bytes_list]
-
-    panels_map = {
-        ("front" if idx == 0 else f"panel_{idx}"): b
-        for idx, b in enumerate(image_bytes_list)
-    }
-
-    raw_logs = {}
-    for panel_key, item in panels_map.items():
-        raw_logs[panel_key] = extract_raw_text_single_image(item, panel_key)
-
-    return synthesize_statutory_declarations(raw_logs)
+def extract_label_data(image_bytes: bytes) -> dict:
+    raw_text, barcodes = extract_raw_text_single_image(image_bytes, "primary")
+    return synthesize_statutory_declarations({"primary": (raw_text, barcodes)})

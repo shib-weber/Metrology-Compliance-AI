@@ -1,65 +1,56 @@
+import io
 import cv2
 import numpy as np
 import base64
+from PIL import Image
+from rembg import remove, new_session
+
+# Preload session once in memory (u2netp is lightweight for free CPU tier)
+rembg_session = new_session("u2netp")
 
 def clean_and_crop_panel(image_bytes: bytes) -> tuple[bytes, str]:
     """
-    Strips background, hands, and bedsheets/tables from ANY panel face.
-    Applies convex hull and bounding rectification.
+    Strips background, surfaces, hands, and shadows using alpha matting.
+    Returns cleaned raw bytes and a standard data URI base64 string.
     """
-    nparr = np.frombuffer(image_bytes, np.uint8)
-    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-    
-    if img is None:
-        return image_bytes, ""
-
-    h, w, _ = img.shape
-
-    # 1. Convert to Gray and apply adaptive bilateral filtering (preserves edges, removes texture noise)
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    filtered = cv2.bilateralFilter(gray, 9, 75, 75)
-    
-    # 2. Otsu thresholding + Morphological gradient to isolate package rectangle
-    _, thresh = cv2.threshold(filtered, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
-    closed = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel, iterations=2)
-
-    contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-    best_crop = img
-    if contours:
-        # Find the dominant contour (the package panel)
-        valid = [c for c in contours if cv2.contourArea(c) > (w * h * 0.03)]
-        if valid:
-            c = max(valid, key=cv2.contourArea)
-            x, y, bw, bh = cv2.boundingRect(c)
-            
-            # Guard against zero/near-zero edge glitches
-            if bw > 50 and bh > 50:
-                pad_x = int(bw * 0.02)
-                pad_y = int(bh * 0.02)
-                x0 = max(0, x - pad_x)
-                y0 = max(0, y - pad_y)
-                x1 = min(w, x + bw + pad_x)
-                y1 = min(h, y + bh + pad_y)
-                best_crop = img[y0:y1, x0:x1]
-            else:
-                # Default central 80% fallback if contour fills entire frame
-                best_crop = img[int(h*0.1):int(h*0.9), int(w*0.1):int(w*0.9)]
+    try:
+        input_image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        rgba_image = remove(input_image, session=rembg_session)
+        rgba_np = np.array(rgba_image)
+        
+        alpha = rgba_np[:, :, 3]
+        contours, _ = cv2.findContours(alpha, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        if contours:
+            c = max(contours, key=cv2.contourArea)
+            x, y, w, h = cv2.boundingRect(c)
+            # Crop to actual bounding bounding rect with 1% safety margin
+            pad_x, pad_y = int(w * 0.01), int(h * 0.01)
+            x0, y0 = max(0, x - pad_x), max(0, y - pad_y)
+            x1, y1 = min(rgba_np.shape[1], x + w + pad_x), min(rgba_np.shape[0], y + h + pad_y)
+            rgba_cropped = rgba_image.crop((x0, y0, x1, y1))
         else:
-            best_crop = img[int(h*0.08):int(h*0.92), int(w*0.08):int(w*0.92)]
-    else:
-        best_crop = img[int(h*0.08):int(h*0.92), int(w*0.08):int(w*0.92)]
+            rgba_cropped = rgba_image
 
-    # 3. Enhance clarity and export clean high-DPI base64 texture
-    _, buffer = cv2.imencode('.jpg', best_crop, [int(cv2.IMWRITE_JPEG_QUALITY), 96])
-    cleaned_bytes = buffer.tobytes()
-    clean_b64 = f"data:image/jpeg;base64,{base64.b64encode(cleaned_bytes).decode('utf-8')}"
+        # Composite onto a neutral white background for OCR and texture mapping
+        rgb_canvas = Image.new("RGB", rgba_cropped.size, (255, 255, 255))
+        rgb_canvas.paste(rgba_cropped, mask=rgba_cropped.split()[3])
+        
+        buf = io.BytesIO()
+        rgb_canvas.save(buf, format="JPEG", quality=95)
+        cleaned_bytes = buf.getvalue()
+        clean_b64 = f"data:image/jpeg;base64,{base64.b64encode(cleaned_bytes).decode('utf-8')}"
+        return cleaned_bytes, clean_b64
 
-    return cleaned_bytes, clean_b64
+    except Exception as e:
+        # Fallback to direct input conversion
+        return image_bytes, f"data:image/jpeg;base64,{base64.b64encode(image_bytes).decode('utf-8')}"
 
 
 def segment_and_analyze_shape(image_bytes: bytes) -> tuple[bytes, str, dict, bool]:
+    """
+    Extracts isolated texture, silhouette metrics, and exact contour metadata.
+    """
     cleaned_bytes, clean_b64 = clean_and_crop_panel(image_bytes)
     
     nparr = np.frombuffer(cleaned_bytes, np.uint8)
@@ -69,22 +60,20 @@ def segment_and_analyze_shape(image_bytes: bytes) -> tuple[bytes, str, dict, boo
     aspect_ratio = round(float(h) / float(w if w > 0 else 1), 2)
     pdp_area = round((w * h) / 900.0, 2)
 
-    # Parametric geometry inference
+    # Dynamic classification for UI hints
     if aspect_ratio > 1.8:
         geometry = "cylinder"
-        mesh_dims = {"radius_top": 0.95, "radius_bottom": 0.95, "height": round(0.95 * aspect_ratio * 1.5, 2)}
-    elif aspect_ratio < 0.6:
+    elif aspect_ratio < 0.65:
         geometry = "pouch"
-        mesh_dims = {"width": 2.2, "height": round(2.2 * aspect_ratio, 2), "depth": 0.35}
     else:
         geometry = "box"
-        mesh_dims = {"width": 1.9, "height": round(1.9 * aspect_ratio, 2), "depth": 1.2}
 
     metadata = {
         "geometry": geometry,
-        "mesh_dims": mesh_dims,
         "aspect_ratio": aspect_ratio,
-        "pdp_area_sq_cm": pdp_area
+        "pdp_area_sq_cm": pdp_area,
+        "width_px": w,
+        "height_px": h
     }
 
     return cleaned_bytes, clean_b64, metadata, True
