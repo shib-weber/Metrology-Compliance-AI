@@ -5,7 +5,6 @@ from dotenv import load_dotenv
 from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Boolean, ForeignKey
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 
-# Load backend/app/.env
 APP_DIR = Path(__file__).resolve().parent.parent
 ENV_PATH = APP_DIR / ".env"
 load_dotenv(dotenv_path=ENV_PATH, override=True)
@@ -18,16 +17,17 @@ else:
     if SQLALCHEMY_DATABASE_URL.startswith("postgres://"):
         SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-connect_args = {"check_same_thread": False} if "sqlite" in SQLALCHEMY_DATABASE_URL else {}
-
 if "sqlite" in SQLALCHEMY_DATABASE_URL:
-    engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args=connect_args)
+    engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
 else:
+    # Optimized engine for Supabase Pooler over Render
     engine = create_engine(
         SQLALCHEMY_DATABASE_URL,
-        pool_size=5,
-        max_overflow=10,
-        pool_pre_ping=True
+        pool_size=3,
+        max_overflow=5,
+        pool_pre_ping=True,
+        pool_recycle=300,
+        connect_args={"connect_timeout": 15}
     )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -40,7 +40,7 @@ class DBUser(Base):
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String(120), unique=True, index=True, nullable=False)
     hashed_password = Column(String(200), nullable=False)
-    role = Column(String(20), default="citizen")  # "inspector" or "citizen"
+    role = Column(String(20), default="citizen")
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     inspections = relationship("DBInspection", back_populates="owner")
@@ -55,11 +55,8 @@ class DBInspection(Base):
     status = Column(String(50), default="NON-COMPLIANT")
     compliance_score = Column(Integer, default=0)
     health_score = Column(Integer, default=0)
-
-    # Supabase public S3 URL for GLB mesh
     glb_url = Column(String(500), nullable=True)
 
-    # Serialized JSON audit payloads
     violations_json = Column(Text, default="[]")
     compliances_json = Column(Text, default="[]")
     raw_declarations_json = Column(Text, default="{}")
@@ -67,7 +64,6 @@ class DBInspection(Base):
     textures_json = Column(Text, default="{}")
     font_audit_json = Column(Text, default="{}")
 
-    # Ownership & Enforcement Workflow
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_by = Column(String(120), default="anonymous")
     flagged_for_review = Column(Boolean, default=False)
@@ -78,7 +74,6 @@ class DBInspection(Base):
     action_taken_at = Column(DateTime, nullable=True)
 
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-
     owner = relationship("DBUser", back_populates="inspections")
 
 
