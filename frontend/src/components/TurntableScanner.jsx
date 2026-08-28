@@ -92,21 +92,45 @@ export default function TurntableScanner({ onComplete, email }) {
   useEffect(() => () => stopCamera(), []);
 
   const snapCurrentView = () => {
-    if (!videoRef.current) return;
     const video = videoRef.current;
-    const vw = video.videoWidth || 1280;
-    const vh = video.videoHeight || 720;
+    if (!video || !video.videoWidth || !video.videoHeight) return;
 
-    const cw = Math.floor(vw * 0.55);
-    const ch = Math.floor(vh * 0.80);
-    const cx = Math.floor((vw - cw) / 2);
-    const cy = Math.floor((vh - ch) / 2);
+    // Raw camera sensor resolution
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+
+    // Rendered on-screen CSS box dimensions
+    const cw = video.clientWidth || 400;
+    const ch = video.clientHeight || 300;
+
+    // Calculate actual scale and offsets applied by CSS "object-cover"
+    const scale = Math.max(cw / vw, ch / vh);
+    const visibleSensorWidth = cw / scale;
+    const visibleSensorHeight = ch / scale;
+
+    const sensorOffsetX = (vw - visibleSensorWidth) / 2;
+    const sensorOffsetY = (vh - visibleSensorHeight) / 2;
+
+    // Guide overlay covers 65% width and 85% height of the visible area
+    const guideRatioW = 0.65;
+    const guideRatioH = 0.85;
+
+    const cropWidth = visibleSensorWidth * guideRatioW;
+    const cropHeight = visibleSensorHeight * guideRatioH;
+    const cropStartX = sensorOffsetX + (visibleSensorWidth - cropWidth) / 2;
+    const cropStartY = sensorOffsetY + (visibleSensorHeight - cropHeight) / 2;
 
     const canvas = document.createElement('canvas');
-    canvas.width = cw;
-    canvas.height = ch;
+    canvas.width = Math.floor(cropWidth);
+    canvas.height = Math.floor(cropHeight);
     const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, cx, cy, cw, ch, 0, 0, cw, ch);
+
+    // Draw only the area inside the guide box
+    ctx.drawImage(
+      video,
+      cropStartX, cropStartY, cropWidth, cropHeight,
+      0, 0, canvas.width, canvas.height
+    );
 
     canvas.toBlob((blob) => {
       if (!blob) return;
@@ -166,13 +190,11 @@ export default function TurntableScanner({ onComplete, email }) {
 
     fd.append('panel_ids', panelIds.join(','));
 
-    // Authenticated submitter email attached for personal audit logs
     const submitterEmail = email || user?.email || localStorage.getItem('user_email') || 'anonymous';
     fd.append('email', submitterEmail);
     fd.append('username', submitterEmail);
 
     try {
-      // 1. Audit Analysis
       const res = await fetch(`${API_BASE_URL}/api/scan/analyze`, {
         method: 'POST',
         body: fd
@@ -183,7 +205,6 @@ export default function TurntableScanner({ onComplete, email }) {
         throw new Error(data.detail || 'Audit rejected by statutory inspection engine');
       }
 
-      // 2. Fetch True 3D Digital Twin Mesh (.glb)
       let glbUrl = null;
       const primaryFile = allPanels.front?.file || allPanels[panelKeys[0]]?.file;
       if (primaryFile) {
@@ -285,7 +306,7 @@ export default function TurntableScanner({ onComplete, email }) {
         />
 
         {cameraActive && (
-          <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-4 z-10">
+          <div className="absolute inset-0 pointer-events-none flex items-center justify-center z-10">
             <div className="w-[65%] h-[85%] border-2 border-dashed border-emerald-400 rounded-xl shadow-[0_0_0_9999px_rgba(0,0,0,0.55)] flex flex-col justify-between p-2.5">
               <div className="bg-emerald-600 text-white font-mono text-[9px] px-2 py-0.5 rounded uppercase font-bold w-fit">
                 ALIGN: {currentPanel.id}
@@ -298,14 +319,14 @@ export default function TurntableScanner({ onComplete, email }) {
         )}
 
         {!cameraActive && currentCapture && (
-          <div className="relative w-full h-full flex flex-col items-center justify-center p-2 z-10 bg-slate-950">
+          <div className="relative w-full h-full flex flex-col items-center justify-center p-3 z-10 bg-slate-950">
             <img
               src={currentCapture.url}
               alt="Captured panel"
               className="max-h-full max-w-full object-contain rounded-lg border border-slate-800"
             />
-            <div className="absolute bottom-2 left-2 right-2 bg-emerald-950/80 border border-emerald-700/60 backdrop-blur-sm py-1 px-2 rounded text-[11px] text-emerald-300 flex items-center justify-center gap-1.5 font-medium">
-              <CheckCircle2 className="w-3.5 h-3.5" />
+            <div className="absolute bottom-3 left-3 right-3 bg-emerald-950/90 border border-emerald-600/70 backdrop-blur-sm py-1.5 px-2 rounded-lg text-[11px] text-emerald-300 flex items-center justify-center gap-1.5 font-medium shadow-lg">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
               <span>{currentPanel.label} saved</span>
             </div>
           </div>
