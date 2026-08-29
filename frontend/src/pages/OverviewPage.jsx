@@ -25,8 +25,7 @@ import {
   Shield, 
   FileCheck2, 
   Compass, 
-  Box,
-  CpuIcon
+  Box
 } from 'lucide-react';
 
 const HERO_VIDEO_URL = '/hero.mp4';
@@ -36,12 +35,11 @@ const QUICK_ANCHORS = [
   { href: '#dataflow', label: '2. Dataflow Matrix' },
   { href: '#wireframes', label: '3. Scanner & 3D HUD' },
   { href: '#techstack', label: '4. Tech Stack' },
-  { href: '#ai-engine', label: '5. AI & OCR' },
-  { href: '#governance', label: '6. Governance & Scale' },
 ];
 
 export default function OverviewPage() {
   const [selectedHudFace, setSelectedHudFace] = useState('Front');
+  const [videoReady, setVideoReady] = useState(false);
   const videoRef = useRef(null);
 
   useEffect(() => {
@@ -53,12 +51,17 @@ export default function OverviewPage() {
     if (playPromise !== undefined) {
       playPromise.catch(() => {});
     }
+
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      video.pause();
+      setVideoReady(true);
+    }
   }, []);
 
   return (
-    <div className="relative min-h-screen w-full bg-[#07090e] text-slate-100 selection:bg-indigo-500 selection:text-white pb-32 font-sans scroll-smooth">
+    <div className="relative isolate min-h-screen w-full flex flex-col items-center bg-[radial-gradient(65%_55%_at_50%_25%,rgba(99,102,241,0.35)_0%,rgba(30,27,75,0)_100%),radial-gradient(120%_90%_at_50%_10%,#1e1b4b_0%,#0f172a_100%)] text-slate-100 selection:bg-indigo-500 selection:text-white pb-32 font-sans scroll-smooth overflow-x-hidden">
       
-      {/* Background Video Layer */}
+      {/* Background Video Layer Matching LoginPage */}
       <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none" aria-hidden="true">
         <video
           ref={videoRef}
@@ -68,19 +71,20 @@ export default function OverviewPage() {
           loop
           playsInline
           preload="auto"
-          className="w-full h-full object-cover opacity-40 brightness-75 contrast-125"
+          onCanPlay={() => setVideoReady(true)}
+          className={`w-full h-full object-cover transition-opacity duration-1000 ${
+            videoReady ? 'opacity-40 brightness-90 contrast-125' : 'opacity-0'
+          }`}
         />
-        {/* Soft Contrast & Grid Vignette */}
-        <div className="absolute inset-0 bg-gradient-to-b from-[#07090e]/80 via-[#07090e]/60 to-[#07090e]" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(99,102,241,0.15)_0%,transparent_70%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(90%_65%_at_50%_45%,rgba(15,23,42,0.2)_20%,rgba(15,23,42,0.75)_100%),linear-gradient(180deg,rgba(15,23,42,0.6)_0%,rgba(15,23,42,0.2)_30%,rgba(15,23,42,0.4)_70%,rgba(15,23,42,0.95)_100%)]" />
         <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff05_1px,transparent_1px),linear-gradient(to_bottom,#ffffff05_1px,transparent_1px)] bg-[size:3.5rem_3.5rem] [mask-image:radial-gradient(ellipse_70%_60%_at_50%_0%,#000_80%,transparent_100%)]" />
       </div>
 
-      {/* Main Content Flow */}
-      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 space-y-16">
+      {/* Centered Main Container */}
+      <div className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 space-y-16 flex flex-col items-center">
         
         {/* Top Meta Bar */}
-        <header className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-6 border-b border-white/10">
+        <header className="w-full flex flex-col sm:flex-row items-center justify-between gap-4 pb-6 border-b border-white/10">
           <Link
             to="/inspector"
             className="group inline-flex items-center gap-2.5 text-xs font-semibold text-slate-200 hover:text-white bg-slate-900/80 hover:bg-slate-800 border border-white/15 hover:border-indigo-400/50 px-4 py-2.5 rounded-xl transition-all shadow-lg backdrop-blur-md"
@@ -99,7 +103,7 @@ export default function OverviewPage() {
 
         {/* Hero Section */}
         <section className="w-full flex flex-col items-center justify-center text-center space-y-6 pt-4 pb-4">
-          <div className="inline-flex p-3.5 rounded-2xl bg-indigo-500/15 border border-indigo-400/30 text-indigo-300 shadow-xl shadow-indigo-950/50">
+          <div className="inline-flex p-3.5 rounded-2xl bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 shadow-xl shadow-indigo-950/50">
             <Workflow className="w-8 h-8" />
           </div>
           
@@ -134,8 +138,8 @@ export default function OverviewPage() {
         </section>
 
         {/* SECTION 1: STATUTORY FLOWCHART */}
-        <section id="pipeline" className="space-y-6 pt-4">
-          <div className="bg-slate-900/75 border border-white/15 backdrop-blur-xl rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
+        <section id="pipeline" className="w-full space-y-6 pt-4">
+          <div className="bg-slate-900/75 border border-white/15 backdrop-blur-2xl rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
             <div className="flex items-center justify-between flex-wrap gap-4 pb-5 border-b border-white/10">
               <div>
                 <span className="font-mono text-[11px] font-bold text-indigo-300 tracking-wider uppercase bg-indigo-950 px-3 py-1 rounded-md border border-indigo-500/30">
@@ -247,8 +251,8 @@ export default function OverviewPage() {
         </section>
 
         {/* SECTION 2: DATAFLOW MATRIX */}
-        <section id="dataflow" className="space-y-6">
-          <div className="bg-slate-900/75 border border-white/15 backdrop-blur-xl rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
+        <section id="dataflow" className="w-full space-y-6">
+          <div className="bg-slate-900/75 border border-white/15 backdrop-blur-2xl rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
             <div className="border-b border-white/10 pb-4">
               <span className="font-mono text-[11px] font-bold text-cyan-300 tracking-wider uppercase bg-cyan-950 px-3 py-1 rounded-md border border-cyan-500/30">
                 Section 02
@@ -317,7 +321,7 @@ export default function OverviewPage() {
         </section>
 
         {/* SECTION 3: SCANNER & 3D HUD */}
-        <section id="wireframes" className="space-y-6">
+        <section id="wireframes" className="w-full space-y-6">
           <div className="border-b border-white/10 pb-4">
             <span className="font-mono text-[11px] font-bold text-emerald-300 tracking-wider uppercase bg-emerald-950 px-3 py-1 rounded-md border border-emerald-500/30">
               Section 03
@@ -331,8 +335,8 @@ export default function OverviewPage() {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <div className="bg-slate-900/75 border border-white/15 backdrop-blur-xl rounded-3xl p-6 sm:p-8 shadow-2xl space-y-5">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 w-full">
+            <div className="bg-slate-900/75 border border-white/15 backdrop-blur-2xl rounded-3xl p-6 sm:p-8 shadow-2xl space-y-5">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
                   <Scan className="w-4 h-4 text-indigo-400" />
@@ -405,7 +409,7 @@ export default function OverviewPage() {
               </div>
             </div>
 
-            <div className="bg-slate-900/75 border border-white/15 backdrop-blur-xl rounded-3xl p-6 sm:p-8 shadow-2xl space-y-5">
+            <div className="bg-slate-900/75 border border-white/15 backdrop-blur-2xl rounded-3xl p-6 sm:p-8 shadow-2xl space-y-5">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
                   <Boxes className="w-4 h-4 text-cyan-400" />
@@ -461,7 +465,7 @@ export default function OverviewPage() {
         </section>
 
         {/* SECTION 4: TECH STACK */}
-        <section id="techstack" className="space-y-6">
+        <section id="techstack" className="w-full space-y-6">
           <div className="border-b border-white/10 pb-4">
             <span className="font-mono text-[11px] font-bold text-indigo-300 tracking-wider uppercase bg-indigo-950 px-3 py-1 rounded-md border border-indigo-500/30">
               Section 04
@@ -475,9 +479,9 @@ export default function OverviewPage() {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-slate-900/75 border border-white/15 backdrop-blur-xl rounded-3xl p-6 sm:p-7 shadow-2xl space-y-5">
-              <div className="w-12 h-12 rounded-2xl bg-indigo-500/15 border border-indigo-400/30 text-indigo-300 flex items-center justify-center">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
+            <div className="bg-slate-900/75 border border-white/15 backdrop-blur-2xl rounded-3xl p-6 sm:p-7 shadow-2xl space-y-5">
+              <div className="w-12 h-12 rounded-2xl bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 flex items-center justify-center">
                 <Smartphone className="w-6 h-6" />
               </div>
               <div>
@@ -504,8 +508,8 @@ export default function OverviewPage() {
               </ul>
             </div>
 
-            <div className="bg-slate-900/75 border border-white/15 backdrop-blur-xl rounded-3xl p-6 sm:p-7 shadow-2xl space-y-5">
-              <div className="w-12 h-12 rounded-2xl bg-emerald-500/15 border border-emerald-400/30 text-emerald-300 flex items-center justify-center">
+            <div className="bg-slate-900/75 border border-white/15 backdrop-blur-2xl rounded-3xl p-6 sm:p-7 shadow-2xl space-y-5">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 flex items-center justify-center">
                 <Server className="w-6 h-6" />
               </div>
               <div>
@@ -532,8 +536,8 @@ export default function OverviewPage() {
               </ul>
             </div>
 
-            <div className="bg-slate-900/75 border border-white/15 backdrop-blur-xl rounded-3xl p-6 sm:p-7 shadow-2xl space-y-5">
-              <div className="w-12 h-12 rounded-2xl bg-cyan-500/15 border border-cyan-400/30 text-cyan-300 flex items-center justify-center">
+            <div className="bg-slate-900/75 border border-white/15 backdrop-blur-2xl rounded-3xl p-6 sm:p-7 shadow-2xl space-y-5">
+              <div className="w-12 h-12 rounded-2xl bg-cyan-500/20 border border-cyan-400/30 text-cyan-300 flex items-center justify-center">
                 <Database className="w-6 h-6" />
               </div>
               <div>
@@ -551,229 +555,16 @@ export default function OverviewPage() {
                 </li>
                 <li className="flex items-start gap-3">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                  <span><strong className="text-white">SQLAlchemy ORM:</strong> Structured schema migration and reliable connection pooling.</span>
+                  <span><strong className="text-white">Docker Hub Deployments:</strong> Multi-stage isolated microservice containers.</span>
                 </li>
                 <li className="flex items-start gap-3">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                  <span><strong className="text-white">Vercel Edge Network:</strong> Global asset distribution providing sub-50ms static delivery.</span>
+                  <span><strong className="text-white">Edge Storage:</strong> Real-time signed CDN bucket hosting for scanned dossiers.</span>
                 </li>
               </ul>
             </div>
           </div>
         </section>
-
-        {/* SECTION 5: AI & OCR ENGINES */}
-        <section id="ai-engine" className="space-y-6">
-          <div className="border-b border-white/10 pb-4">
-            <span className="font-mono text-[11px] font-bold text-amber-300 tracking-wider uppercase bg-amber-950 px-3 py-1 rounded-md border border-amber-500/30">
-              Section 05
-            </span>
-            <h2 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2.5 mt-2.5">
-              <Zap className="w-5 h-5 text-amber-400" />
-              AI Capabilities &amp; Vision OCR Engines
-            </h2>
-            <p className="text-xs sm:text-sm text-slate-300 mt-1">
-              Edge-based processing combined with GPU-accelerated statutory verification
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div className="bg-slate-900/75 border border-white/15 backdrop-blur-xl rounded-3xl p-6 sm:p-8 shadow-2xl space-y-5">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-xl bg-indigo-500/15 border border-indigo-400/30 text-indigo-300">
-                  <CpuIcon className="w-5 h-5" />
-                </div>
-                <h3 className="text-base font-bold text-white">AI &amp; Computer Vision Engine</h3>
-              </div>
-              
-              <div className="space-y-4 text-xs text-slate-300">
-                <div className="p-4 bg-slate-950/90 rounded-2xl border border-white/10 space-y-1.5">
-                  <p className="font-bold text-white flex items-center justify-between text-sm">
-                    <span>1. Edge &amp; Contour Tracking</span>
-                    <span className="text-[10px] font-mono text-indigo-300 bg-indigo-950 px-2 py-0.5 rounded">Client-Side</span>
-                  </p>
-                  <p className="text-xs text-slate-300 leading-relaxed">
-                    Pixel gradient analysis locks a dynamic 1:1 bounding reticle to prevent perspective distortion prior to server upload.
-                  </p>
-                </div>
-
-                <div className="p-4 bg-slate-950/90 rounded-2xl border border-white/10 space-y-1.5">
-                  <p className="font-bold text-white flex items-center justify-between text-sm">
-                    <span>2. Adaptive CLAHE Synthesis</span>
-                    <span className="text-[10px] font-mono text-indigo-300 bg-indigo-950 px-2 py-0.5 rounded">OpenCV Core</span>
-                  </p>
-                  <p className="text-xs text-slate-300 leading-relaxed">
-                    Equalizes the luminance channel across reflective, dark, or glossy surfaces, resolving OCR capture failures on live camera snaps.
-                  </p>
-                </div>
-
-                <div className="p-4 bg-slate-950/90 rounded-2xl border border-white/10 space-y-1.5">
-                  <p className="font-bold text-white flex items-center justify-between text-sm">
-                    <span>3. Multi-Orientation OCR Pass</span>
-                    <span className="text-[10px] font-mono text-indigo-300 bg-indigo-950 px-2 py-0.5 rounded">PyTorch GPU</span>
-                  </p>
-                  <p className="text-xs text-slate-300 leading-relaxed">
-                    Evaluates rotations across 0°, 90°, 180°, and 270° to reliably extract micro-printed batch codes, dates, and statutory markings.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-slate-900/75 border border-white/15 backdrop-blur-xl rounded-3xl p-6 sm:p-8 shadow-2xl space-y-5">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-xl bg-emerald-500/15 border border-emerald-400/30 text-emerald-300">
-                  <Sparkles className="w-5 h-5" />
-                </div>
-                <h3 className="text-base font-bold text-white">Core Advantages Over Manual Audits</h3>
-              </div>
-
-              <div className="space-y-4 text-xs text-slate-300">
-                <div className="p-4 bg-slate-950/90 rounded-2xl border border-white/10 space-y-1.5">
-                  <p className="font-bold text-emerald-300 flex items-center justify-between text-sm">
-                    <span>99.4% Latency Reduction</span>
-                    <span className="text-[10px] font-mono text-emerald-300 bg-emerald-950 px-2 py-0.5 rounded">&lt; 1.8s Scan</span>
-                  </p>
-                  <p className="text-xs text-slate-300 leading-relaxed">
-                    Reduces comprehensive packaging inspections from 15 minutes manually down to under 2 seconds across all legal schedules.
-                  </p>
-                </div>
-
-                <div className="p-4 bg-slate-950/90 rounded-2xl border border-white/10 space-y-1.5">
-                  <p className="font-bold text-emerald-300 flex items-center justify-between text-sm">
-                    <span>Photogrammetric 3D Proof</span>
-                    <span className="text-[10px] font-mono text-emerald-300 bg-emerald-950 px-2 py-0.5 rounded">.GLB Twin</span>
-                  </p>
-                  <p className="text-xs text-slate-300 leading-relaxed">
-                    Generates an interactive, tamper-evident digital twin that preserves the exact specimen condition for statutory court evidence.
-                  </p>
-                </div>
-
-                <div className="p-4 bg-slate-950/90 rounded-2xl border border-white/10 space-y-1.5">
-                  <p className="font-bold text-emerald-300 flex items-center justify-between text-sm">
-                    <span>Zero Inspector Subjectivity</span>
-                    <span className="text-[10px] font-mono text-emerald-300 bg-emerald-950 px-2 py-0.5 rounded">Deterministic</span>
-                  </p>
-                  <p className="text-xs text-slate-300 leading-relaxed">
-                    Exact pixel-to-millimeter ratio verification against Rule 7 Table 1 font matrices removes human inspection bias and errors.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* SECTION 6: GOVERNANCE & SCALE */}
-        <section id="governance" className="space-y-6">
-          <div className="border-b border-white/10 pb-4">
-            <span className="font-mono text-[11px] font-bold text-purple-300 tracking-wider uppercase bg-purple-950 px-3 py-1 rounded-md border border-purple-500/30">
-              Section 06
-            </span>
-            <h2 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2.5 mt-2.5">
-              <TrendingUp className="w-5 h-5 text-purple-400" />
-              Scalability, Feasibility &amp; Data Governance
-            </h2>
-            <p className="text-xs sm:text-sm text-slate-300 mt-1">
-              Legal admissibility standards under the Indian Evidence Act and economic scaling
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-            <div className="bg-slate-900/75 border border-white/15 backdrop-blur-xl rounded-3xl p-6 shadow-xl space-y-2.5">
-              <div className="text-indigo-400 font-bold text-xs flex items-center gap-1.5">
-                <CheckCircle2 className="w-4 h-4" /> Technical Feasibility
-              </div>
-              <h3 className="font-bold text-base text-white">Browser-Native Compute</h3>
-              <p className="text-xs text-slate-300 leading-relaxed">
-                Requires zero specialized hardware; runs on standard mobile browsers using WebGL and WebRTC camera feeds.
-              </p>
-            </div>
-
-            <div className="bg-slate-900/75 border border-white/15 backdrop-blur-xl rounded-3xl p-6 shadow-xl space-y-2.5">
-              <div className="text-emerald-400 font-bold text-xs flex items-center gap-1.5">
-                <TrendingUp className="w-4 h-4" /> Economic Viability
-              </div>
-              <h3 className="font-bold text-base text-white">Serverless Scaling</h3>
-              <p className="text-xs text-slate-300 leading-relaxed">
-                ZeroGPU cold-start scheduling eliminates idle cloud costs, enabling high-volume scans at minimal operational expense.
-              </p>
-            </div>
-
-            <div className="bg-slate-900/75 border border-white/15 backdrop-blur-xl rounded-3xl p-6 shadow-xl space-y-2.5">
-              <div className="text-cyan-400 font-bold text-xs flex items-center gap-1.5">
-                <Compass className="w-4 h-4" /> Scalability
-              </div>
-              <h3 className="font-bold text-base text-white">Microservice Sharding</h3>
-              <p className="text-xs text-slate-300 leading-relaxed">
-                Stateless FastAPI workers enable seamless container horizontal autoscaling across distributed Kubernetes pods.
-              </p>
-            </div>
-
-            <div className="bg-slate-900/75 border border-white/15 backdrop-blur-xl rounded-3xl p-6 shadow-xl space-y-2.5">
-              <div className="text-amber-400 font-bold text-xs flex items-center gap-1.5">
-                <Target className="w-4 h-4" /> Target Audience
-              </div>
-              <h3 className="font-bold text-base text-white">Enforcement &amp; FMCG</h3>
-              <p className="text-xs text-slate-300 leading-relaxed">
-                Legal Metrology Officers, FSSAI Inspectors, FMCG Quality Assurance pipelines, and Consumer Rights organizations.
-              </p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div className="bg-slate-900/75 border border-white/15 backdrop-blur-xl rounded-3xl p-6 sm:p-8 shadow-2xl space-y-5">
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <Shield className="w-5 h-5 text-indigo-400" />
-                Security &amp; Legal Admissibility
-              </h3>
-              <div className="space-y-3.5 text-xs text-slate-300">
-                <div className="flex items-start gap-3.5 p-4 bg-slate-950/90 rounded-2xl border border-white/10">
-                  <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                  <div>
-                    <p className="font-bold text-white text-sm">Section 65B Indian Evidence Act Compliance</p>
-                    <p className="text-xs text-slate-300 mt-1">Produces machine-verifiable audit logs and cryptographically hashed digital evidence for court proceedings.</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3.5 p-4 bg-slate-950/90 rounded-2xl border border-white/10">
-                  <FileCheck2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                  <div>
-                    <p className="font-bold text-white text-sm">Automated Form V Docketing</p>
-                    <p className="text-xs text-slate-300 mt-1">Formats statutory compound notices with specific infraction citations (Rule 6, Rule 7, Rule 32) ready for immediate filing.</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-slate-900/75 border border-white/15 backdrop-blur-xl rounded-3xl p-6 sm:p-8 shadow-2xl space-y-5">
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <Scale className="w-5 h-5 text-emerald-400" />
-                Socio-Economic &amp; Regulatory Impact
-              </h3>
-              <div className="space-y-3.5 text-xs text-slate-300">
-                <div className="flex items-start gap-3.5 p-4 bg-slate-950/90 rounded-2xl border border-white/10">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                  <div>
-                    <p className="font-bold text-white text-sm">Curbing Deceptive Downsizing (Shrinkflation)</p>
-                    <p className="text-xs text-slate-300 mt-1">Enforces mandatory Unit Sale Price (USP) calculations to protect consumers from covert packaging shrinkage.</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3.5 p-4 bg-slate-950/90 rounded-2xl border border-white/10">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                  <div>
-                    <p className="font-bold text-white text-sm">FMCG Pre-Production Validation</p>
-                    <p className="text-xs text-slate-300 mt-1">Enables brands to verify packaging artwork prior to mass cylinder printing, eliminating risk of regulatory product recalls.</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Footer Authority Badge */}
-        <footer className="bg-slate-950/90 border border-white/15 rounded-2xl p-5 text-center text-xs text-slate-300 backdrop-blur-md">
-          <p>
-            Metronox Packaging Metrology Engine • Built in accordance with Legal Metrology (Packaged Commodities) Rules 2011 &amp; FSSAI Regulations.
-          </p>
-        </footer>
 
       </div>
     </div>

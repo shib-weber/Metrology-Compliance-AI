@@ -3,8 +3,6 @@ import { Link } from 'react-router-dom';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { 
   OrbitControls, 
-  useGLTF, 
-  Stage, 
   Float, 
   ContactShadows, 
   Html,
@@ -13,7 +11,6 @@ import {
 import * as THREE from 'three';
 import { 
   Box, 
-  Layers, 
   Sparkles, 
   ArrowLeft, 
   Cpu, 
@@ -21,10 +18,8 @@ import {
   Download, 
   Eye, 
   ShieldCheck, 
-  CheckCircle2, 
   Zap, 
-  Grid3X3,
-  Maximize2
+  Grid3X3
 } from 'lucide-react';
 
 const HERO_VIDEO_URL = '/hero.mp4';
@@ -43,7 +38,7 @@ const SHOWCASE_TWINS = [
     min_font_prescribed: '1.0 mm',
     detected_font: '1.4 mm',
     color: '#6366f1',
-    glbUrl: null, // Falls back to procedural preview if not dynamically provided
+    glbUrl: null,
     textures: {
       brand: 'OXYMETAZOLINE',
       mrp: '₹ 120.79 (Incl. of all taxes)',
@@ -106,10 +101,9 @@ function ProceduralTwinMesh({ item, wireframe, autoRotate }) {
     }
   });
 
-  // Material configurations: Clean bright white packaging finish with high legibility
   const baseMaterialProps = {
-    color: '#f8fafc',         // Crisp clean white packaging substrate
-    roughness: 0.18,          // Slight sheen like glossy paperboard / coated plastic
+    color: '#f8fafc',
+    roughness: 0.18,
     metalness: 0.05,
     wireframe: wireframe
   };
@@ -124,19 +118,16 @@ function ProceduralTwinMesh({ item, wireframe, autoRotate }) {
   if (item.geometry === 'cylinder') {
     return (
       <group ref={meshRef}>
-        {/* Main Canister Body */}
         <mesh castShadow receiveShadow>
           <cylinderGeometry args={[1.1, 1.1, 3.2, 64]} />
           <meshStandardMaterial {...baseMaterialProps} color="#ffffff" />
         </mesh>
 
-        {/* Top Metallic / Accent Cap */}
         <mesh position={[0, 1.62, 0]} castShadow>
           <cylinderGeometry args={[1.14, 1.14, 0.16, 64]} />
           <meshStandardMaterial {...accentMaterialProps} metalness={0.65} />
         </mesh>
 
-        {/* Front Product Label Banner */}
         <mesh position={[0, 0, 1.105]}>
           <planeGeometry args={[1.4, 2.0]} />
           <meshBasicMaterial color="#ffffff" side={THREE.DoubleSide} />
@@ -148,13 +139,11 @@ function ProceduralTwinMesh({ item, wireframe, autoRotate }) {
   if (item.geometry === 'pouch') {
     return (
       <group ref={meshRef}>
-        {/* Pouch Main Body */}
         <mesh castShadow receiveShadow scale={[1.4, 2.2, 0.7]}>
           <capsuleGeometry args={[0.7, 1.2, 12, 32]} />
           <meshStandardMaterial {...baseMaterialProps} color="#f1f5f9" />
         </mesh>
 
-        {/* Pouch Heat-Sealed Top Gusset */}
         <mesh position={[0, 1.6, 0]}>
           <boxGeometry args={[1.85, 0.22, 0.08]} />
           <meshStandardMaterial {...accentMaterialProps} />
@@ -163,7 +152,6 @@ function ProceduralTwinMesh({ item, wireframe, autoRotate }) {
     );
   }
 
-  // Default Box Model: Bright pharmaceutical / retail cardboard carton
   return (
     <group ref={meshRef}>
       <mesh castShadow receiveShadow>
@@ -171,13 +159,11 @@ function ProceduralTwinMesh({ item, wireframe, autoRotate }) {
         <meshStandardMaterial {...baseMaterialProps} color="#ffffff" />
       </mesh>
 
-      {/* Top Flap Accent Band */}
       <mesh position={[0, 1.0, 0.805]}>
         <planeGeometry args={[1.5, 0.5]} />
         <meshStandardMaterial {...accentMaterialProps} />
       </mesh>
 
-      {/* High-Contrast Outer Geometry Wire Edges */}
       <lineSegments>
         <edgesGeometry args={[new THREE.BoxGeometry(1.602, 2.602, 1.602)]} />
         <lineBasicMaterial color={item.color} linewidth={2} />
@@ -207,6 +193,7 @@ export default function DigitalTwinsPage() {
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
+    video.muted = true;
     const play = video.play();
     if (play?.catch) play.catch(() => {});
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -216,7 +203,7 @@ export default function DigitalTwinsPage() {
   }, []);
 
   return (
-    <div className="relative isolate min-h-screen w-full overflow-x-hidden bg-[radial-gradient(65%_55%_at_50%_15%,rgba(99,102,241,0.3)_0%,rgba(30,27,75,0)_100%),radial-gradient(120%_90%_at_50%_0%,#1e1b4b_0%,#0f172a_100%)] text-slate-100 selection:bg-indigo-500 selection:text-white">
+    <div className="relative isolate min-h-screen w-full flex flex-col items-center bg-[radial-gradient(65%_55%_at_50%_25%,rgba(99,102,241,0.35)_0%,rgba(30,27,75,0)_100%),radial-gradient(120%_90%_at_50%_10%,#1e1b4b_0%,#0f172a_100%)] text-slate-100 selection:bg-indigo-500 selection:text-white pb-32 font-sans scroll-smooth overflow-x-hidden">
       
       {/* Background Video Canvas Layer */}
       <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none" aria-hidden="true">
@@ -230,48 +217,56 @@ export default function DigitalTwinsPage() {
           preload="auto"
           onCanPlay={() => setVideoReady(true)}
           className={`w-full h-full object-cover transition-opacity duration-1000 ${
-            videoReady ? 'opacity-35' : 'opacity-0'
+            videoReady ? 'opacity-40 brightness-90 contrast-125' : 'opacity-0'
           }`}
         />
-        <div className="absolute inset-0 bg-[radial-gradient(90%_65%_at_50%_35%,rgba(15,23,42,0.25)_10%,rgba(15,23,42,0.85)_100%),linear-gradient(180deg,rgba(15,23,42,0.7)_0%,rgba(15,23,42,0.4)_40%,rgba(15,23,42,0.94)_100%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(90%_65%_at_50%_45%,rgba(15,23,42,0.2)_20%,rgba(15,23,42,0.75)_100%),linear-gradient(180deg,rgba(15,23,42,0.6)_0%,rgba(15,23,42,0.2)_30%,rgba(15,23,42,0.4)_70%,rgba(15,23,42,0.95)_100%)]" />
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff05_1px,transparent_1px),linear-gradient(to_bottom,#ffffff05_1px,transparent_1px)] bg-[size:3.5rem_3.5rem] [mask-image:radial-gradient(ellipse_70%_60%_at_50%_0%,#000_80%,transparent_100%)]" />
       </div>
 
-      {/* Main Container */}
-      <div className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12 space-y-8">
+      {/* Main Container Centered for Desktops */}
+      <div className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 space-y-10 flex flex-col items-center">
         
         {/* Navigation Bar */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-white/10 backdrop-blur-md">
+        <header className="w-full flex flex-col sm:flex-row items-center justify-between gap-4 pb-6 border-b border-white/10">
           <Link
             to="/inspector"
-            className="inline-flex items-center gap-2 text-xs font-semibold text-indigo-300 hover:text-white bg-slate-900/60 hover:bg-indigo-600/40 border border-white/10 px-3.5 py-2 rounded-xl transition backdrop-blur-lg shadow-sm"
+            className="group inline-flex items-center gap-2.5 text-xs font-semibold text-slate-200 hover:text-white bg-slate-900/80 hover:bg-slate-800 border border-white/15 hover:border-indigo-400/50 px-4 py-2.5 rounded-xl transition-all shadow-lg backdrop-blur-md"
           >
-            <ArrowLeft className="w-4 h-4" />
+            <ArrowLeft className="w-4 h-4 text-indigo-400 group-hover:-translate-x-1 transition-transform" />
             <span>Return to Workstation</span>
           </Link>
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-indigo-500/20 border border-indigo-400/30 text-xs font-bold tracking-wider text-indigo-200 uppercase shadow-[0_0_15px_rgba(99,102,241,0.25)]">
-            <Cpu className="w-3.5 h-3.5 text-indigo-300" />
-            3D Photogrammetry &amp; Mesh Twin Engine
+          
+          <div className="inline-flex items-center gap-2.5 px-4 py-2 rounded-full bg-slate-900/80 border border-indigo-400/30 text-xs font-semibold text-indigo-200 shadow-md backdrop-blur-md">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="font-mono text-[11px] uppercase tracking-wider text-slate-300">Spec v2.6.4</span>
+            <span className="text-white/20">•</span>
+            <span>3D Photogrammetry &amp; Mesh Twin Engine</span>
           </div>
-        </div>
+        </header>
 
         {/* Page Hero */}
-        <div className="text-center space-y-4 max-w-3xl mx-auto pt-2">
-          <div className="w-14 h-14 rounded-2xl bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 flex items-center justify-center mx-auto shadow-inner shadow-indigo-500/20">
-            <Box className="w-7 h-7 text-indigo-300" />
+        <section className="w-full flex flex-col items-center justify-center text-center space-y-6 pt-2 pb-2">
+          <div className="inline-flex p-3.5 rounded-2xl bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 shadow-xl shadow-indigo-950/50">
+            <Box className="w-8 h-8" />
           </div>
-          <h1 className="text-3xl sm:text-5xl font-black text-white tracking-tight leading-tight">
-            Statutory <span className="bg-gradient-to-r from-indigo-200 via-indigo-300 to-indigo-500 bg-clip-text text-transparent">Digital Twins</span>
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-300 font-light leading-relaxed">
-            Real-time interactive WebGL viewport rendering statutory evidence models (.GLB) reconstructed dynamically from calibrated 6-face packaging scans.
-          </p>
-        </div>
+          
+          <div className="space-y-4 max-w-4xl mx-auto flex flex-col items-center">
+            <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black text-white tracking-tight leading-tight text-center">
+              Statutory <span className="bg-gradient-to-r from-indigo-300 via-indigo-100 to-indigo-400 bg-clip-text text-transparent">Digital Twins</span>
+            </h1>
+            
+            <p className="text-sm sm:text-base text-slate-300 font-normal leading-relaxed max-w-3xl text-center">
+              Real-time interactive WebGL viewport rendering statutory evidence models (.GLB) reconstructed dynamically from calibrated 6-face packaging scans.
+            </p>
+          </div>
+        </section>
 
         {/* Interactive 3D Canvas Studio & Metadata Layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start w-full">
           
           {/* Main 3D WebGL Canvas Viewport */}
-          <div className="lg:col-span-8 bg-slate-900/70 border border-white/15 backdrop-blur-2xl rounded-3xl p-4 sm:p-6 shadow-2xl space-y-4">
+          <div className="lg:col-span-8 bg-slate-900/75 border border-white/15 backdrop-blur-2xl rounded-3xl p-4 sm:p-6 shadow-2xl space-y-4 w-full">
             
             {/* Viewport Control Bar */}
             <div className="flex items-center justify-between flex-wrap gap-2 pb-3 border-b border-white/10 text-xs">
@@ -282,14 +277,14 @@ export default function DigitalTwinsPage() {
                 </span>
               </div>
 
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setAutoRotate(!autoRotate)}
-                  className={`p-2 rounded-xl border text-xs transition flex items-center gap-1.5 ${
+                  className={`px-3 py-1.5 rounded-xl border text-xs transition flex items-center gap-1.5 ${
                     autoRotate 
-                      ? 'bg-indigo-600/30 border-indigo-500 text-indigo-200' 
-                      : 'bg-slate-950 border-white/10 text-slate-400'
+                      ? 'bg-indigo-600/40 border-indigo-400 text-indigo-100 shadow-sm' 
+                      : 'bg-slate-950/80 border-white/10 text-slate-400 hover:text-white'
                   }`}
                   title="Toggle Auto Rotation"
                 >
@@ -300,10 +295,10 @@ export default function DigitalTwinsPage() {
                 <button
                   type="button"
                   onClick={() => setWireframeMode(!wireframeMode)}
-                  className={`p-2 rounded-xl border text-xs transition flex items-center gap-1.5 ${
+                  className={`px-3 py-1.5 rounded-xl border text-xs transition flex items-center gap-1.5 ${
                     wireframeMode 
-                      ? 'bg-cyan-600/30 border-cyan-500 text-cyan-200' 
-                      : 'bg-slate-950 border-white/10 text-slate-400'
+                      ? 'bg-cyan-600/40 border-cyan-400 text-cyan-100 shadow-sm' 
+                      : 'bg-slate-950/80 border-white/10 text-slate-400 hover:text-white'
                   }`}
                   title="Toggle Wireframe Mesh"
                 >
@@ -314,7 +309,7 @@ export default function DigitalTwinsPage() {
             </div>
 
             {/* Three.js Canvas */}
-            <div className="w-full h-[400px] sm:h-[480px] bg-gradient-to-b from-slate-950/90 to-slate-900/90 rounded-2xl border border-white/10 relative overflow-hidden flex items-center justify-center">
+            <div className="w-full h-[400px] sm:h-[480px] bg-gradient-to-b from-slate-950/95 to-slate-900/95 rounded-2xl border border-white/10 relative overflow-hidden flex items-center justify-center">
               
               <Canvas
                 shadows
@@ -354,18 +349,18 @@ export default function DigitalTwinsPage() {
 
               {/* Viewport Overlay Controls Prompt */}
               <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between pointer-events-none text-[11px] text-slate-400 font-mono">
-                <span className="bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-lg border border-white/10">
+                <span className="bg-black/70 backdrop-blur-md px-3 py-1 rounded-lg border border-white/10 text-slate-300">
                   Left Click + Drag to Orbit • Scroll to Zoom
                 </span>
-                <span className="bg-indigo-950/80 text-indigo-300 backdrop-blur-md px-2.5 py-1 rounded-lg border border-indigo-500/30 font-bold uppercase">
+                <span className="bg-indigo-950/90 text-indigo-200 backdrop-blur-md px-3 py-1 rounded-lg border border-indigo-500/40 font-bold uppercase">
                   {selectedTwin.geometry} geometry
                 </span>
               </div>
             </div>
 
             {/* Pipeline How-It-Works Breakdown */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 text-xs">
-              <div className="bg-slate-950/60 p-3 rounded-2xl border border-white/5 space-y-1">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-2 text-xs">
+              <div className="bg-slate-950/70 p-3.5 rounded-2xl border border-white/5 space-y-1 shadow-md">
                 <div className="flex items-center gap-1.5 text-indigo-300 font-semibold">
                   <Eye className="w-3.5 h-3.5" />
                   <span>1. 6-Axis Acquisition</span>
@@ -375,7 +370,7 @@ export default function DigitalTwinsPage() {
                 </p>
               </div>
 
-              <div className="bg-slate-950/60 p-3 rounded-2xl border border-white/5 space-y-1">
+              <div className="bg-slate-950/70 p-3.5 rounded-2xl border border-white/5 space-y-1 shadow-md">
                 <div className="flex items-center gap-1.5 text-emerald-300 font-semibold">
                   <Zap className="w-3.5 h-3.5" />
                   <span>2. Texture Rectification</span>
@@ -385,7 +380,7 @@ export default function DigitalTwinsPage() {
                 </p>
               </div>
 
-              <div className="bg-slate-950/60 p-3 rounded-2xl border border-white/5 space-y-1">
+              <div className="bg-slate-950/70 p-3.5 rounded-2xl border border-white/5 space-y-1 shadow-md">
                 <div className="flex items-center gap-1.5 text-cyan-300 font-semibold">
                   <Cpu className="w-3.5 h-3.5" />
                   <span>3. Binary GLB Export</span>
@@ -399,34 +394,34 @@ export default function DigitalTwinsPage() {
           </div>
 
           {/* Model Selection & Statutory Evidence Dossier */}
-          <div className="lg:col-span-4 space-y-6">
+          <div className="lg:col-span-4 space-y-6 w-full">
             
             {/* Twin Selector Carousel */}
-            <div className="bg-slate-900/70 border border-white/15 backdrop-blur-2xl rounded-3xl p-5 shadow-2xl space-y-3">
+            <div className="bg-slate-900/75 border border-white/15 backdrop-blur-2xl rounded-3xl p-5 sm:p-6 shadow-2xl space-y-4">
               <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
                 Select Calibrated Specimen
               </h3>
 
-              <div className="space-y-2">
+              <div className="space-y-2.5">
                 {SHOWCASE_TWINS.map((item) => (
                   <button
                     key={item.id}
                     type="button"
                     onClick={() => setSelectedTwin(item)}
-                    className={`w-full text-left p-3 rounded-2xl border transition-all duration-200 flex items-center justify-between ${
+                    className={`w-full text-left p-3.5 rounded-2xl border transition-all duration-200 flex items-center justify-between ${
                       selectedTwin.id === item.id
                         ? 'bg-indigo-600/30 border-indigo-400 shadow-md shadow-indigo-600/20 text-white'
-                        : 'bg-slate-950/60 border-white/5 text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+                        : 'bg-slate-950/70 border-white/5 text-slate-400 hover:text-slate-200 hover:bg-slate-900'
                     }`}
                   >
-                    <div className="space-y-0.5 pr-2">
+                    <div className="space-y-1 pr-2">
                       <p className="text-xs font-bold leading-tight">{item.name}</p>
                       <p className="text-[10px] text-slate-400 font-mono">{item.category} • {item.dimensions}</p>
                     </div>
-                    <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold shrink-0 ${
+                    <span className={`text-[10px] px-2.5 py-1 rounded-md font-mono font-bold shrink-0 ${
                       item.status === 'COMPLIANT' 
-                        ? 'bg-emerald-950 text-emerald-300 border border-emerald-500/40' 
-                        : 'bg-rose-950 text-rose-300 border border-rose-500/40'
+                        ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-500/40' 
+                        : 'bg-rose-950/80 text-rose-300 border border-rose-500/40'
                     }`}>
                       {item.status}
                     </span>
@@ -436,7 +431,7 @@ export default function DigitalTwinsPage() {
             </div>
 
             {/* Metrological Evidence Audit Card */}
-            <div className="bg-slate-900/70 border border-white/15 backdrop-blur-2xl rounded-3xl p-5 shadow-2xl space-y-4">
+            <div className="bg-slate-900/75 border border-white/15 backdrop-blur-2xl rounded-3xl p-5 sm:p-6 shadow-2xl space-y-4">
               <div className="flex items-center justify-between pb-3 border-b border-white/10">
                 <span className="text-xs font-bold text-white flex items-center gap-1.5">
                   <ShieldCheck className="w-4 h-4 text-indigo-400" />
@@ -446,28 +441,28 @@ export default function DigitalTwinsPage() {
               </div>
 
               <div className="space-y-2.5 text-xs">
-                <div className="flex justify-between py-1 border-b border-white/5">
+                <div className="flex justify-between py-1.5 border-b border-white/5">
                   <span className="text-slate-400">Principal Display Area (PDP):</span>
                   <span className="font-mono text-slate-200 font-semibold">{selectedTwin.pdp_area}</span>
                 </div>
-                <div className="flex justify-between py-1 border-b border-white/5">
+                <div className="flex justify-between py-1.5 border-b border-white/5">
                   <span className="text-slate-400">Prescribed Min Font (Rule 7):</span>
                   <span className="font-mono text-indigo-300 font-semibold">{selectedTwin.min_font_prescribed}</span>
                 </div>
-                <div className="flex justify-between py-1 border-b border-white/5">
+                <div className="flex justify-between py-1.5 border-b border-white/5">
                   <span className="text-slate-400">Measured Optical Height:</span>
                   <span className="font-mono text-emerald-300 font-semibold">{selectedTwin.detected_font}</span>
                 </div>
-                <div className="flex justify-between py-1 border-b border-white/5">
+                <div className="flex justify-between py-1.5 border-b border-white/5">
                   <span className="text-slate-400">Extracted Batch Code:</span>
                   <span className="font-mono text-slate-200">{selectedTwin.textures.batch}</span>
                 </div>
-                <div className="flex justify-between py-1 border-b border-white/5">
+                <div className="flex justify-between py-1.5 border-b border-white/5">
                   <span className="text-slate-400">Statutory MRP:</span>
                   <span className="font-mono text-slate-200">{selectedTwin.textures.mrp}</span>
                 </div>
                 {selectedTwin.textures.usp && (
-                  <div className="flex justify-between py-1 border-b border-white/5">
+                  <div className="flex justify-between py-1.5 border-b border-white/5">
                     <span className="text-slate-400">Unit Sale Price (USP):</span>
                     <span className="font-mono text-slate-200">{selectedTwin.textures.usp}</span>
                   </div>
@@ -478,7 +473,7 @@ export default function DigitalTwinsPage() {
                 <button
                   type="button"
                   onClick={() => alert(`Exporting calibrated binary GLB for ${selectedTwin.name}...`)}
-                  className="w-full bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-400 hover:to-indigo-500 text-white font-semibold py-2.5 rounded-xl text-xs flex items-center justify-center gap-2 transition shadow-lg shadow-indigo-600/30"
+                  className="w-full bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-400 hover:to-indigo-500 active:scale-[0.99] text-white font-semibold py-3 rounded-2xl text-xs flex items-center justify-center gap-2 transition shadow-lg shadow-indigo-600/30"
                 >
                   <Download className="w-3.5 h-3.5" />
                   <span>Download Statutory .GLB Evidence</span>
@@ -491,11 +486,11 @@ export default function DigitalTwinsPage() {
         </div>
 
         {/* Footer Authority Badge */}
-        <div className="bg-slate-900/50 border border-white/10 rounded-2xl p-4 text-center text-xs text-slate-400 backdrop-blur-md">
+        <footer className="w-full bg-slate-900/60 border border-white/10 rounded-2xl p-4 text-center text-xs text-slate-400 backdrop-blur-md">
           <p>
             Metronox 3D Mesh Reconstruction Engine complies with ISO/IEC 12113 Photogrammetry Evidence Standards &amp; Legal Metrology Digital Verification Frameworks.
           </p>
-        </div>
+        </footer>
 
       </div>
     </div>

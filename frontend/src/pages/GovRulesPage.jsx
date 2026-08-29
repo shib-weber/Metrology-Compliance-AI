@@ -250,6 +250,7 @@ export default function GovRulesPage() {
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
+    video.muted = true;
     const play = video.play();
     if (play?.catch) play.catch(() => {});
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -258,7 +259,6 @@ export default function GovRulesPage() {
     }
   }, []);
 
-  // Filter frameworks while keeping all rules visible by default
   const filteredFrameworks = STATUTORY_FRAMEWORKS.filter((fw) => {
     if (selectedFramework !== 'all' && fw.id !== selectedFramework) return false;
     return true;
@@ -280,7 +280,7 @@ export default function GovRulesPage() {
   const totalRulesCount = STATUTORY_FRAMEWORKS.reduce((acc, curr) => acc + curr.sections.length, 0);
 
   return (
-    <div className="relative isolate min-h-screen w-full overflow-x-hidden bg-[radial-gradient(65%_55%_at_50%_15%,rgba(99,102,241,0.3)_0%,rgba(30,27,75,0)_100%),radial-gradient(120%_90%_at_50%_0%,#1e1b4b_0%,#0f172a_100%)] text-slate-100 selection:bg-indigo-500 selection:text-white">
+    <div className="relative isolate min-h-screen w-full flex flex-col items-center bg-[radial-gradient(65%_55%_at_50%_25%,rgba(99,102,241,0.35)_0%,rgba(30,27,75,0)_100%),radial-gradient(120%_90%_at_50%_10%,#1e1b4b_0%,#0f172a_100%)] text-slate-100 selection:bg-indigo-500 selection:text-white pb-32 font-sans scroll-smooth overflow-x-hidden">
       
       {/* Background Video Layer */}
       <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none" aria-hidden="true">
@@ -294,155 +294,163 @@ export default function GovRulesPage() {
           preload="auto"
           onCanPlay={() => setVideoReady(true)}
           className={`w-full h-full object-cover transition-opacity duration-1000 ${
-            videoReady ? 'opacity-40' : 'opacity-0'
+            videoReady ? 'opacity-40 brightness-90 contrast-125' : 'opacity-0'
           }`}
         />
-        <div className="absolute inset-0 bg-[radial-gradient(90%_65%_at_50%_35%,rgba(15,23,42,0.25)_10%,rgba(15,23,42,0.85)_100%),linear-gradient(180deg,rgba(15,23,42,0.7)_0%,rgba(15,23,42,0.4)_40%,rgba(15,23,42,0.92)_100%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(90%_65%_at_50%_45%,rgba(15,23,42,0.2)_20%,rgba(15,23,42,0.75)_100%),linear-gradient(180deg,rgba(15,23,42,0.6)_0%,rgba(15,23,42,0.2)_30%,rgba(15,23,42,0.4)_70%,rgba(15,23,42,0.95)_100%)]" />
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff05_1px,transparent_1px),linear-gradient(to_bottom,#ffffff05_1px,transparent_1px)] bg-[size:3.5rem_3.5rem] [mask-image:radial-gradient(ellipse_70%_60%_at_50%_0%,#000_80%,transparent_100%)]" />
       </div>
 
-      {/* Main Content Container */}
-      <div className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12 space-y-8">
+      {/* Main Content Container Centered across Large Viewports */}
+      <div className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 space-y-10 flex flex-col items-center">
         
-        {/* Navigation & Header */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-white/10 backdrop-blur-md">
+        {/* Top Meta Bar */}
+        <header className="w-full flex flex-col sm:flex-row items-center justify-between gap-4 pb-6 border-b border-white/10">
           <Link
             to="/inspector"
-            className="inline-flex items-center gap-2 text-xs font-semibold text-indigo-300 hover:text-white bg-slate-900/60 hover:bg-indigo-600/40 border border-white/10 px-3.5 py-2 rounded-xl transition backdrop-blur-lg shadow-sm"
+            className="group inline-flex items-center gap-2.5 text-xs font-semibold text-slate-200 hover:text-white bg-slate-900/80 hover:bg-slate-800 border border-white/15 hover:border-indigo-400/50 px-4 py-2.5 rounded-xl transition-all shadow-lg backdrop-blur-md"
           >
-            <ArrowLeft className="w-4 h-4" />
+            <ArrowLeft className="w-4 h-4 text-indigo-400 group-hover:-translate-x-1 transition-transform" />
             <span>Return to Workstation</span>
           </Link>
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-indigo-500/20 border border-indigo-400/30 text-xs font-bold tracking-wider text-indigo-200 uppercase shadow-[0_0_15px_rgba(99,102,241,0.25)]">
-            <Sparkles className="w-3.5 h-3.5 text-indigo-300" />
-            Statutory Codex 2026
+          
+          <div className="inline-flex items-center gap-2.5 px-4 py-2 rounded-full bg-slate-900/80 border border-indigo-400/30 text-xs font-semibold text-indigo-200 shadow-md backdrop-blur-md">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="font-mono text-[11px] uppercase tracking-wider text-slate-300">Statutory Codex 2026</span>
+            <span className="text-white/20">•</span>
+            <span>Legal Metrology &amp; FSSAI Directives</span>
           </div>
-        </div>
+        </header>
 
         {/* Hero Section */}
-        <div className="text-center space-y-4 max-w-3xl mx-auto pt-2">
-          <div className="w-14 h-14 rounded-2xl bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 flex items-center justify-center mx-auto shadow-inner shadow-indigo-500/20">
-            <Scale className="w-7 h-7 text-indigo-300" />
+        <section className="w-full flex flex-col items-center justify-center text-center space-y-6 pt-2 pb-2">
+          <div className="inline-flex p-3.5 rounded-2xl bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 shadow-xl shadow-indigo-950/50">
+            <Scale className="w-8 h-8" />
           </div>
-          <h1 className="text-3xl sm:text-5xl font-black text-white tracking-tight leading-tight">
-            Indian Statutory <span className="bg-gradient-to-r from-indigo-200 via-indigo-300 to-indigo-500 bg-clip-text text-transparent">Packaging Rules</span>
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-300 font-light leading-relaxed">
-            Unrestricted complete legal codex of the Legal Metrology (Packaged Commodities) Rules 2011, FSSAI regulations, and Drugs &amp; Cosmetics packaging mandates.
-          </p>
-        </div>
+          
+          <div className="space-y-4 max-w-4xl mx-auto flex flex-col items-center">
+            <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black text-white tracking-tight leading-tight text-center">
+              Indian Statutory <span className="bg-gradient-to-r from-indigo-300 via-indigo-100 to-indigo-400 bg-clip-text text-transparent">Packaging Rules</span>
+            </h1>
+            
+            <p className="text-sm sm:text-base text-slate-300 font-normal leading-relaxed max-w-3xl text-center">
+              Unrestricted statutory codex of the Legal Metrology (Packaged Commodities) Rules 2011, FSSAI regulations, and Drugs &amp; Cosmetics packaging mandates.
+            </p>
+          </div>
+        </section>
 
         {/* Legal Hierarchy Explainer Card */}
-        <div className="bg-slate-900/70 border border-indigo-500/30 backdrop-blur-2xl p-5 rounded-2xl shadow-xl space-y-3">
-          <div className="flex items-center gap-2 text-indigo-300 font-bold text-sm">
-            <Info className="w-4 h-4 text-indigo-400 shrink-0" />
+        <div className="w-full bg-slate-900/75 border border-indigo-500/30 backdrop-blur-2xl p-6 rounded-3xl shadow-2xl space-y-4">
+          <div className="flex items-center gap-2.5 text-indigo-300 font-bold text-sm">
+            <Info className="w-5 h-5 text-indigo-400 shrink-0" />
             <span>Understanding Legal Metrology Numbering (e.g. Rule 6(1)(e))</span>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-slate-300">
-            <div className="bg-slate-950/70 p-3 rounded-xl border border-white/5 space-y-1">
-              <span className="font-mono text-indigo-300 font-bold">Rule 6</span>
-              <p className="text-[11px] text-slate-400">Main Rule Category: Prescribes all mandatory declarations that must appear on packaging.</p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs text-slate-300">
+            <div className="bg-slate-950/70 p-4 rounded-2xl border border-white/5 space-y-1.5 shadow-md">
+              <span className="font-mono text-indigo-300 font-bold text-sm">Rule 6</span>
+              <p className="text-xs text-slate-400 leading-relaxed">Main Rule Category: Prescribes all mandatory statutory declarations that must appear on pre-packaging.</p>
             </div>
-            <div className="bg-slate-950/70 p-3 rounded-xl border border-white/5 space-y-1">
-              <span className="font-mono text-indigo-300 font-bold">Sub-rule (1)</span>
-              <p className="text-[11px] text-slate-400">Operational Scope: Applies to retail pre-packaged commodities sold in India.</p>
+            <div className="bg-slate-950/70 p-4 rounded-2xl border border-white/5 space-y-1.5 shadow-md">
+              <span className="font-mono text-indigo-300 font-bold text-sm">Sub-rule (1)</span>
+              <p className="text-xs text-slate-400 leading-relaxed">Operational Scope: Applies directly to all retail pre-packaged commodities sold across India.</p>
             </div>
-            <div className="bg-slate-950/70 p-3 rounded-xl border border-white/5 space-y-1">
-              <span className="font-mono text-indigo-300 font-bold">Clause (e)</span>
-              <p className="text-[11px] text-slate-400">Specific Mandate: Declares that Maximum Retail Price (MRP) must be prominently printed.</p>
+            <div className="bg-slate-950/70 p-4 rounded-2xl border border-white/5 space-y-1.5 shadow-md">
+              <span className="font-mono text-indigo-300 font-bold text-sm">Clause (e)</span>
+              <p className="text-xs text-slate-400 leading-relaxed">Specific Mandate: Declares that Maximum Retail Price (MRP) must be prominently printed inclusive of all taxes.</p>
             </div>
           </div>
         </div>
 
         {/* Master Comparison Matrix */}
-        <div className="bg-slate-900/60 border border-indigo-500/20 backdrop-blur-2xl rounded-2xl p-5 shadow-2xl space-y-4">
-          <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="w-full bg-slate-900/75 border border-white/15 backdrop-blur-2xl rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
+          <div className="flex items-center justify-between flex-wrap gap-4 pb-4 border-b border-white/10">
             <div className="flex items-center gap-2.5">
               <Layers className="w-5 h-5 text-indigo-400 shrink-0" />
-              <h3 className="text-sm sm:text-base font-bold text-white">
+              <h3 className="text-base sm:text-lg font-bold text-white">
                 Master Statutory Matrix for Pre-Packaged Goods
               </h3>
             </div>
-            <span className="text-[11px] bg-indigo-500/20 text-indigo-300 px-2.5 py-0.5 rounded-full border border-indigo-400/30 font-semibold">
-              All Rules Open &amp; Visible
+            <span className="text-xs bg-indigo-500/20 text-indigo-300 px-3 py-1 rounded-full border border-indigo-400/30 font-semibold">
+              All Directives Open
             </span>
           </div>
           
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs border-collapse">
               <thead>
-                <tr className="border-b border-white/15 bg-indigo-950/40 text-slate-200 font-semibold">
-                  <th className="p-2.5">Act / Code</th>
-                  <th className="p-2.5">Section / Rule</th>
-                  <th className="p-2.5">Mandated Declaration</th>
-                  <th className="p-2.5">Physical Target on Package</th>
+                <tr className="border-b border-white/15 bg-indigo-950/50 text-slate-200 font-semibold">
+                  <th className="p-3">Act / Code</th>
+                  <th className="p-3">Section / Rule</th>
+                  <th className="p-3">Mandated Declaration</th>
+                  <th className="p-3">Physical Target on Package</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5 text-slate-300">
                 <tr className="hover:bg-white/5 transition">
-                  <td className="p-2.5 font-bold text-white">Legal Metrology PCR 2011</td>
-                  <td className="p-2.5 font-mono text-indigo-300">Rule 6(1)(a)</td>
-                  <td className="p-2.5">Manufacturer / Packer / Importer Name &amp; Address</td>
-                  <td className="p-2.5">Back / Side Panel</td>
+                  <td className="p-3 font-bold text-white">Legal Metrology PCR 2011</td>
+                  <td className="p-3 font-mono text-indigo-300 font-semibold">Rule 6(1)(a)</td>
+                  <td className="p-3">Manufacturer / Packer / Importer Name &amp; Address</td>
+                  <td className="p-3 text-slate-400">Back / Side Panel</td>
                 </tr>
                 <tr className="hover:bg-white/5 transition">
-                  <td className="p-2.5 font-bold text-white">Legal Metrology PCR 2011</td>
-                  <td className="p-2.5 font-mono text-indigo-300">Rule 6(1)(b)</td>
-                  <td className="p-2.5">Generic / Common Commodity Name</td>
-                  <td className="p-2.5">Front (Principal Display Panel)</td>
+                  <td className="p-3 font-bold text-white">Legal Metrology PCR 2011</td>
+                  <td className="p-3 font-mono text-indigo-300 font-semibold">Rule 6(1)(b)</td>
+                  <td className="p-3">Generic / Common Commodity Name</td>
+                  <td className="p-3 text-slate-400">Front (Principal Display Panel)</td>
                 </tr>
                 <tr className="hover:bg-white/5 transition">
-                  <td className="p-2.5 font-bold text-white">Legal Metrology PCR 2011</td>
-                  <td className="p-2.5 font-mono text-indigo-300">Rule 6(1)(c)</td>
-                  <td className="p-2.5">Net Quantity in Metric Units (g, kg, ml, L)</td>
-                  <td className="p-2.5">Principal Display Panel</td>
+                  <td className="p-3 font-bold text-white">Legal Metrology PCR 2011</td>
+                  <td className="p-3 font-mono text-indigo-300 font-semibold">Rule 6(1)(c)</td>
+                  <td className="p-3">Net Quantity in Metric Units (g, kg, ml, L)</td>
+                  <td className="p-3 text-slate-400">Principal Display Panel</td>
                 </tr>
                 <tr className="hover:bg-white/5 transition">
-                  <td className="p-2.5 font-bold text-white">Legal Metrology PCR 2011</td>
-                  <td className="p-2.5 font-mono text-indigo-300">Rule 6(1)(d)</td>
-                  <td className="p-2.5">Month &amp; Year of Mfg / Packing / Import</td>
-                  <td className="p-2.5">Top Flap / Back Panel</td>
+                  <td className="p-3 font-bold text-white">Legal Metrology PCR 2011</td>
+                  <td className="p-3 font-mono text-indigo-300 font-semibold">Rule 6(1)(d)</td>
+                  <td className="p-3">Month &amp; Year of Mfg / Packing / Import</td>
+                  <td className="p-3 text-slate-400">Top Flap / Back Panel</td>
                 </tr>
                 <tr className="hover:bg-white/5 transition">
-                  <td className="p-2.5 font-bold text-white">Legal Metrology PCR 2011</td>
-                  <td className="p-2.5 font-mono text-indigo-300">Rule 6(1)(da)</td>
-                  <td className="p-2.5">Unit Sale Price (USP in ₹/g or ₹/ml)</td>
-                  <td className="p-2.5">Beside MRP</td>
+                  <td className="p-3 font-bold text-white">Legal Metrology PCR 2011</td>
+                  <td className="p-3 font-mono text-indigo-300 font-semibold">Rule 6(1)(da)</td>
+                  <td className="p-3">Unit Sale Price (USP in ₹/g or ₹/ml)</td>
+                  <td className="p-3 text-slate-400">Beside MRP</td>
                 </tr>
                 <tr className="hover:bg-white/5 transition">
-                  <td className="p-2.5 font-bold text-white">Legal Metrology PCR 2011</td>
-                  <td className="p-2.5 font-mono text-indigo-300">Rule 6(1)(e)</td>
-                  <td className="p-2.5">Max Retail Price (MRP ₹ incl. of all taxes)</td>
-                  <td className="p-2.5">Top Flap / Back Panel</td>
+                  <td className="p-3 font-bold text-white">Legal Metrology PCR 2011</td>
+                  <td className="p-3 font-mono text-indigo-300 font-semibold">Rule 6(1)(e)</td>
+                  <td className="p-3">Max Retail Price (MRP ₹ incl. of all taxes)</td>
+                  <td className="p-3 text-slate-400">Top Flap / Back Panel</td>
                 </tr>
                 <tr className="hover:bg-white/5 transition">
-                  <td className="p-2.5 font-bold text-white">Legal Metrology PCR 2011</td>
-                  <td className="p-2.5 font-mono text-indigo-300">Rule 6(1)(n)</td>
-                  <td className="p-2.5">Consumer Care (Email, Phone, Physical Address)</td>
-                  <td className="p-2.5">Side / Back Panel</td>
+                  <td className="p-3 font-bold text-white">Legal Metrology PCR 2011</td>
+                  <td className="p-3 font-mono text-indigo-300 font-semibold">Rule 6(1)(n)</td>
+                  <td className="p-3">Consumer Care (Email, Phone, Physical Address)</td>
+                  <td className="p-3 text-slate-400">Side / Back Panel</td>
                 </tr>
                 <tr className="hover:bg-white/5 transition">
-                  <td className="p-2.5 font-bold text-white">Legal Metrology PCR 2011</td>
-                  <td className="p-2.5 font-mono text-indigo-300">Rule 7 &amp; Table 1</td>
-                  <td className="p-2.5">Minimum Font Heights (1.0 mm to 6.0 mm)</td>
-                  <td className="p-2.5">Across All Declarations</td>
+                  <td className="p-3 font-bold text-white">Legal Metrology PCR 2011</td>
+                  <td className="p-3 font-mono text-indigo-300 font-semibold">Rule 7 &amp; Table 1</td>
+                  <td className="p-3">Minimum Font Heights (1.0 mm to 6.0 mm)</td>
+                  <td className="p-3 text-slate-400">Across All Declarations</td>
                 </tr>
                 <tr className="hover:bg-white/5 transition">
-                  <td className="p-2.5 font-bold text-white">FSSAI Regulations 2020</td>
-                  <td className="p-2.5 font-mono text-indigo-300">Reg 5(1) &amp; 5(4)</td>
-                  <td className="p-2.5">14-Digit License No. &amp; Veg/Non-Veg Symbol</td>
-                  <td className="p-2.5">Front / Back Panel</td>
+                  <td className="p-3 font-bold text-white">FSSAI Regulations 2020</td>
+                  <td className="p-3 font-mono text-indigo-300 font-semibold">Reg 5(1) &amp; 5(4)</td>
+                  <td className="p-3">14-Digit License No. &amp; Veg/Non-Veg Symbol</td>
+                  <td className="p-3 text-slate-400">Front / Back Panel</td>
                 </tr>
                 <tr className="hover:bg-white/5 transition">
-                  <td className="p-2.5 font-bold text-white">FSSAI Regulations 2020</td>
-                  <td className="p-2.5 font-mono text-indigo-300">Reg 5(3)</td>
-                  <td className="p-2.5">Tabular Nutritional Information Table</td>
-                  <td className="p-2.5">Back Panel</td>
+                  <td className="p-3 font-bold text-white">FSSAI Regulations 2020</td>
+                  <td className="p-3 font-mono text-indigo-300 font-semibold">Reg 5(3)</td>
+                  <td className="p-3">Tabular Nutritional Information Table</td>
+                  <td className="p-3 text-slate-400">Back Panel</td>
                 </tr>
                 <tr className="hover:bg-white/5 transition">
-                  <td className="p-2.5 font-bold text-white">Drugs &amp; Cosmetics 1945</td>
-                  <td className="p-2.5 font-mono text-indigo-300">Rule 96 &amp; 97</td>
-                  <td className="p-2.5">Batch No., Mfg Lic. No., Rx Red Warning Box</td>
-                  <td className="p-2.5">Front / Top Panel</td>
+                  <td className="p-3 font-bold text-white">Drugs &amp; Cosmetics 1945</td>
+                  <td className="p-3 font-mono text-indigo-300 font-semibold">Rule 96 &amp; 97</td>
+                  <td className="p-3">Batch No., Mfg Lic. No., Rx Red Warning Box</td>
+                  <td className="p-3 text-slate-400">Front / Top Panel</td>
                 </tr>
               </tbody>
             </table>
@@ -450,10 +458,10 @@ export default function GovRulesPage() {
         </div>
 
         {/* Rule 7 Typography Standards Card */}
-        <div className="bg-slate-900/60 border border-indigo-500/20 backdrop-blur-2xl rounded-2xl p-5 shadow-2xl space-y-4">
-          <div className="flex items-center gap-2.5">
+        <div className="w-full bg-slate-900/75 border border-white/15 backdrop-blur-2xl rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
+          <div className="flex items-center gap-2.5 pb-4 border-b border-white/10">
             <BookOpen className="w-5 h-5 text-indigo-400 shrink-0" />
-            <h3 className="text-sm sm:text-base font-bold text-white">
+            <h3 className="text-base sm:text-lg font-bold text-white">
               Rule 7 Table 1: Prescribed Minimum Font Heights by PDP Area
             </h3>
           </div>
@@ -461,43 +469,43 @@ export default function GovRulesPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs border-collapse">
               <thead>
-                <tr className="border-b border-white/15 bg-indigo-950/40 text-slate-200 font-semibold">
-                  <th className="p-2.5">Principal Display Panel Area (A)</th>
-                  <th className="p-2.5">Minimum Height (Normal Print)</th>
-                  <th className="p-2.5">Minimum Height (Blown/Moulded)</th>
-                  <th className="p-2.5">Sample Commodity Sizes</th>
+                <tr className="border-b border-white/15 bg-indigo-950/50 text-slate-200 font-semibold">
+                  <th className="p-3">Principal Display Panel Area (A)</th>
+                  <th className="p-3">Minimum Height (Normal Print)</th>
+                  <th className="p-3">Minimum Height (Blown/Moulded)</th>
+                  <th className="p-3">Sample Commodity Sizes</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5 text-slate-300">
                 <tr className="hover:bg-white/5 transition">
-                  <td className="p-2.5 font-mono">A &le; 50 cm²</td>
-                  <td className="p-2.5 font-bold text-emerald-300">1.0 mm</td>
-                  <td className="p-2.5 text-amber-300">2.0 mm</td>
-                  <td className="p-2.5">Small cosmetics, eye drops, sachets</td>
+                  <td className="p-3 font-mono">A &le; 50 cm²</td>
+                  <td className="p-3 font-bold text-emerald-400">1.0 mm</td>
+                  <td className="p-3 text-amber-300">2.0 mm</td>
+                  <td className="p-3 text-slate-400">Small cosmetics, eye drops, sachets</td>
                 </tr>
                 <tr className="hover:bg-white/5 transition">
-                  <td className="p-2.5 font-mono">50 cm² &lt; A &le; 100 cm²</td>
-                  <td className="p-2.5 font-bold text-emerald-300">1.5 mm</td>
-                  <td className="p-2.5 text-amber-300">3.0 mm</td>
-                  <td className="p-2.5">Medium pouches, toothpaste, syrups</td>
+                  <td className="p-3 font-mono">50 cm² &lt; A &le; 100 cm²</td>
+                  <td className="p-3 font-bold text-emerald-400">1.5 mm</td>
+                  <td className="p-3 text-amber-300">3.0 mm</td>
+                  <td className="p-3 text-slate-400">Medium pouches, toothpaste, syrups</td>
                 </tr>
                 <tr className="hover:bg-white/5 transition">
-                  <td className="p-2.5 font-mono">100 cm² &lt; A &le; 500 cm²</td>
-                  <td className="p-2.5 font-bold text-emerald-300">2.5 mm</td>
-                  <td className="p-2.5 text-amber-300">4.0 mm</td>
-                  <td className="p-2.5">Standard FMCG cartons, cereal boxes</td>
+                  <td className="p-3 font-mono">100 cm² &lt; A &le; 500 cm²</td>
+                  <td className="p-3 font-bold text-emerald-400">2.5 mm</td>
+                  <td className="p-3 text-amber-300">4.0 mm</td>
+                  <td className="p-3 text-slate-400">Standard FMCG cartons, cereal boxes</td>
                 </tr>
                 <tr className="hover:bg-white/5 transition">
-                  <td className="p-2.5 font-mono">500 cm² &lt; A &le; 2500 cm²</td>
-                  <td className="p-2.5 font-bold text-emerald-300">4.0 mm</td>
-                  <td className="p-2.5 text-amber-300">6.0 mm</td>
-                  <td className="p-2.5">1kg - 5kg bulk packs, detergent bags</td>
+                  <td className="p-3 font-mono">500 cm² &lt; A &le; 2500 cm²</td>
+                  <td className="p-3 font-bold text-emerald-400">4.0 mm</td>
+                  <td className="p-3 text-amber-300">6.0 mm</td>
+                  <td className="p-3 text-slate-400">1kg - 5kg bulk packs, detergent bags</td>
                 </tr>
                 <tr className="hover:bg-white/5 transition">
-                  <td className="p-2.5 font-mono">A &gt; 2500 cm²</td>
-                  <td className="p-2.5 font-bold text-emerald-300">6.0 mm</td>
-                  <td className="p-2.5 text-amber-300">6.0 mm</td>
-                  <td className="p-2.5">Industrial shipping crates, multi-packs</td>
+                  <td className="p-3 font-mono">A &gt; 2500 cm²</td>
+                  <td className="p-3 font-bold text-emerald-400">6.0 mm</td>
+                  <td className="p-3 text-amber-300">6.0 mm</td>
+                  <td className="p-3 text-slate-400">Industrial shipping crates, multi-packs</td>
                 </tr>
               </tbody>
             </table>
@@ -505,29 +513,29 @@ export default function GovRulesPage() {
         </div>
 
         {/* Live Filter Bar Placed Directly Above Detailed Cards */}
-        <div className="bg-slate-900/80 border border-white/20 backdrop-blur-2xl p-4 rounded-2xl shadow-xl space-y-3 sticky top-4 z-20">
+        <div className="w-full bg-slate-900/85 border border-white/20 backdrop-blur-2xl p-4 sm:p-5 rounded-3xl shadow-2xl space-y-4 sticky top-4 z-20">
           <div className="flex items-center justify-between text-xs text-slate-300">
-            <span className="font-semibold flex items-center gap-1.5 text-indigo-300">
+            <span className="font-semibold flex items-center gap-2 text-indigo-300">
               <ListFilter className="w-4 h-4" /> Filter or Search Detailed Articles
             </span>
-            <span className="text-[11px] text-slate-400">
+            <span className="text-[11px] text-slate-400 font-mono">
               Showing {filteredFrameworks.reduce((a, c) => a + c.sections.length, 0)} of {totalRulesCount} total rules
             </span>
           </div>
 
-          <div className="flex flex-col sm:flex-row gap-3">
+          <div className="flex flex-col lg:flex-row gap-3">
             <div className="relative flex-1">
               <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Type to filter specific rule (e.g., 'Rule 6(1)(e)', 'MRP', 'Font Height', 'FSSAI', 'Batch', 'Rule 3')..."
-                className="w-full bg-slate-950/80 border border-white/10 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/30 rounded-xl pl-10 pr-4 py-2 text-xs sm:text-sm text-white placeholder-slate-400 outline-none transition"
+                placeholder="Search rule (e.g. 'Rule 6(1)(e)', 'MRP', 'Font Height', 'FSSAI', 'Batch')..."
+                className="w-full bg-slate-950/80 border border-white/15 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/30 rounded-2xl pl-10 pr-4 py-2.5 text-xs sm:text-sm text-white placeholder-slate-400 outline-none transition backdrop-blur-md"
               />
             </div>
 
-            <div className="flex gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+            <div className="flex gap-2 overflow-x-auto pb-1 lg:pb-0">
               {[
                 { id: 'all', label: 'All Frameworks' },
                 { id: 'lm-rules-2011-administrative', label: 'Rules 1-5 (Scope)' },
@@ -539,10 +547,10 @@ export default function GovRulesPage() {
                 <button
                   key={id}
                   onClick={() => setSelectedFramework(id)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition border ${
+                  className={`px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition border ${
                     selectedFramework === id
                       ? 'bg-indigo-600 text-white border-indigo-400 shadow-md shadow-indigo-600/30'
-                      : 'bg-slate-950/60 text-slate-400 border-white/10 hover:text-slate-200 hover:bg-slate-800'
+                      : 'bg-slate-950/60 text-slate-300 border-white/10 hover:text-white hover:bg-slate-800'
                   }`}
                 >
                   {label}
@@ -552,16 +560,16 @@ export default function GovRulesPage() {
           </div>
         </div>
 
-        {/* Detailed Statute Cards Grid (Rendered by Default) */}
-        <div className="space-y-8">
+        {/* Detailed Statute Cards Grid */}
+        <div className="w-full space-y-8">
           {filteredFrameworks.map((fw) => (
             <div
               key={fw.id}
-              className="bg-slate-900/70 border border-white/15 backdrop-blur-2xl rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6"
+              className="bg-slate-900/75 border border-white/15 backdrop-blur-2xl rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6"
             >
               <div className="space-y-2 pb-4 border-b border-white/10">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="px-2.5 py-0.5 rounded-md bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 text-[11px] font-mono font-bold">
+                  <span className="px-3 py-1 rounded-md bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 text-xs font-mono font-bold">
                     {fw.act}
                   </span>
                 </div>
@@ -569,7 +577,7 @@ export default function GovRulesPage() {
                   {fw.title}
                 </h2>
                 <div className="flex items-center gap-2 text-xs text-slate-400">
-                  <Building2 className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                  <Building2 className="w-4 h-4 text-indigo-400 shrink-0" />
                   <span>{fw.nodal_body}</span>
                 </div>
                 <p className="text-xs text-slate-300 italic pt-1">
@@ -577,32 +585,32 @@ export default function GovRulesPage() {
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 {fw.sections.map((sec, idx) => (
                   <div
                     key={idx}
-                    className="bg-slate-950/60 border border-white/10 hover:border-indigo-400/50 rounded-2xl p-4 space-y-3 transition-all duration-300 hover:shadow-lg hover:shadow-indigo-500/10 flex flex-col justify-between"
+                    className="bg-slate-950/70 border border-white/10 hover:border-indigo-400/50 rounded-2xl p-5 space-y-3.5 transition-all duration-300 hover:shadow-lg hover:shadow-indigo-500/10 flex flex-col justify-between"
                   >
-                    <div className="space-y-2">
+                    <div className="space-y-2.5">
                       <div className="flex items-start justify-between gap-2">
-                        <span className="font-mono font-bold text-xs bg-indigo-950 border border-indigo-600/50 text-indigo-300 px-2.5 py-1 rounded-lg">
+                        <span className="font-mono font-bold text-xs bg-indigo-950 border border-indigo-500/40 text-indigo-300 px-3 py-1 rounded-lg">
                           {sec.rule_num}
                         </span>
-                        <span className="text-[10px] font-semibold text-slate-400 bg-white/5 px-2 py-0.5 rounded uppercase">
+                        <span className="text-[10px] font-semibold text-slate-300 bg-white/5 px-2.5 py-1 rounded uppercase">
                           {sec.type}
                         </span>
                       </div>
                       <h4 className="text-sm font-bold text-white leading-snug">
                         {sec.subject}
                       </h4>
-                      <p className="text-xs text-slate-300 leading-relaxed font-light">
+                      <p className="text-xs text-slate-300 leading-relaxed font-normal">
                         {sec.summary}
                       </p>
                     </div>
 
-                    <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[11px]">
-                      <span className="text-rose-400 flex items-center gap-1 font-mono">
-                        <AlertTriangle className="w-3 h-3 text-rose-400 shrink-0" />
+                    <div className="pt-3 border-t border-white/10 flex items-center justify-between text-xs">
+                      <span className="text-rose-400 flex items-center gap-1.5 font-mono">
+                        <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
                         {sec.penal_clause}
                       </span>
                     </div>
@@ -613,7 +621,7 @@ export default function GovRulesPage() {
           ))}
 
           {filteredFrameworks.length === 0 && (
-            <div className="text-center py-16 bg-slate-900/60 border border-white/10 rounded-3xl backdrop-blur-xl space-y-3">
+            <div className="text-center py-16 bg-slate-900/60 border border-white/10 rounded-3xl backdrop-blur-2xl space-y-3 w-full">
               <HelpCircle className="w-10 h-10 text-slate-500 mx-auto" />
               <h3 className="text-base font-bold text-white">No Matching Legal Rules Found</h3>
               <p className="text-xs text-slate-400 max-w-sm mx-auto">
@@ -624,11 +632,11 @@ export default function GovRulesPage() {
         </div>
 
         {/* Footer Authority Note */}
-        <div className="bg-slate-900/50 border border-white/10 rounded-2xl p-4 text-center text-xs text-slate-400 backdrop-blur-md">
+        <footer className="w-full bg-slate-900/60 border border-white/10 rounded-2xl p-4 text-center text-xs text-slate-400 backdrop-blur-md">
           <p>
             Enforced by Metronox Automated Optical Compliance Scanner under Rule 6, 7 &amp; 32 of Legal Metrology Rules, 2011.
           </p>
-        </div>
+        </footer>
 
       </div>
     </div>
