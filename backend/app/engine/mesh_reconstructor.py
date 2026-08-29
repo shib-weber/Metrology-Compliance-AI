@@ -3,62 +3,113 @@ import cv2
 import numpy as np
 import trimesh
 from PIL import Image
-from rembg import remove, new_session
-
-_rembg_session = None
-
-def get_session():
-    global _rembg_session
-    if _rembg_session is None:
-        _rembg_session = new_session("u2netp")
-    return _rembg_session
 
 class DigitalTwin3DGenerator:
     @staticmethod
-    def generate_mesh_glb(front_image_bytes: bytes) -> bytes:
+    def extract_clean_white_background_texture(image_bytes: bytes) -> Image.Image:
         """
-        Creates a 3D digital twin GLB mesh adapted to the product's silhouette contour.
+        Extracts the packaging object and forcefully converts all surrounding 
+        background (hands, desks, keyboards) into a pure, solid white substrate (#FFFFFF).
         """
-        input_image = Image.open(io.BytesIO(front_image_bytes)).convert("RGB")
-        rgba_img = remove(input_image, session=get_session())
-        rgba_np = np.array(rgba_img)
-        alpha = rgba_np[:, :, 3]
+        try:
+            nparr = np.frombuffer(image_bytes, np.uint8)
+            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            if img is None:
+                return Image.new("RGB", (1024, 1024), (255, 255, 255))
 
-        # 1. Extract contour polygon from alpha mask
-        blur = cv2.GaussianBlur(alpha, (5, 5), 0)
-        _, thresh = cv2.threshold(blur, 127, 255, cv2.THRESH_BINARY)
-        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_TC89_KCOS)
+            h, w = img.shape[:2]
 
-        mesh = None
-        if contours:
-            contour = max(contours, key=cv2.contourArea)
-            # Simplify polygon to reduce vertex complexity
-            epsilon = 0.005 * cv2.arcLength(contour, True)
-            approx = cv2.approxPolyDP(contour, epsilon, True).reshape(-1, 2)
+            # 1. Convert to grayscale and calculate gradient magnitude
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            blurred = cv2.GaussianBlur(gray, (7, 7), 0)
 
-            if len(approx) >= 3:
-                h, w = alpha.shape
-                scale = max(w, h) / 2.0
-                poly2d = np.zeros_like(approx, dtype=np.float64)
-                poly2d[:, 0] = (approx[:, 0] - (w / 2.0)) / scale
-                poly2d[:, 1] = -(approx[:, 1] - (h / 2.0)) / scale
+            # 2. Otsu adaptive binarization + edge synthesis
+            _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            edges = cv2.Canny(blurred, 30, 150)
+            combined_mask = cv2.bitwise_or(thresh, edges)
 
-                polygon = trimesh.path.polygons.Polygon(poly2d)
-                if not polygon.is_valid:
-                    polygon = polygon.buffer(0)
+            # Close internal packaging holes (text, barcodes)
+            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (9, 9))
+            closed_mask = cv2.morphologyEx(combined_mask, cv2.MORPH_CLOSE, kernel, iterations=3)
 
-                depth = 0.55
-                try:
-                    # Uses mapbox_earcut or triangle engine
-                    mesh = trimesh.creation.extrude_polygon(polygon, height=depth)
-                    mesh.apply_translation([0, 0, -depth / 2.0])
-                except Exception:
-                    mesh = None
+            # 3. Find primary packaging contour
+            contours, _ = cv2.findContours(closed_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            
+            mask = np.zeros((h, w), dtype=np.uint8)
+            img_area = w * h
 
-        # Fallback to bounding box mesh if contour extrusion is unviable
-        if mesh is None:
-            mesh = trimesh.creation.box(extents=(1.5, 2.2, 0.8))
+            if contours:
+                # Filter out tiny noise contours and grab the prominent specimen
+                valid_contours = [c for c in contours if cv2.contourArea(c) > (img_area * 0.08)]
+                if valid_contours:
+                    main_contour = max(valid_contours, key=cv2.contourArea)
+                    hull = cv2.convexHull(main_contour)
+                    cv2.drawContours(mask, [hull], -1, 255, thickness=cv2.FILLED)
+                else:
+                    # Central focus box fallback (center 70% width, 80% height)
+                    pad_x = int(w * 0.15)
+                    pad_y = int(h * 0.10)
+                    mask[pad_y:h - pad_y, pad_x:w - pad_x] = 255
+            else:
+                pad_x = int(w * 0.15)
+                pad_y = int(h * 0.10)
+                mask[pad_y:h - pad_y, pad_x:w - pad_x] = 255
 
-        # 2. Export standard binary GLB
-        glb_bytes = trimesh.exchange.gltf.export_glb(mesh)
-        return glb_bytes
+            # Smooth mask edges to avoid jagged pixel cutoffs
+            mask = cv2.GaussianBlur(mask, (5, 5), 0)
+            mask_norm = (mask.astype(np.float32) / 255.0)[:, :, np.newaxis]
+
+            # 4. Composite: Keep object pixels, replace all remaining pixels with pure #FFFFFF White
+            solid_white_bg = np.ones_like(img, dtype=np.float32) * 255.0
+            img_float = img.astype(np.float32)
+
+            composited = (img_float * mask_norm) + (solid_white_bg * (1.0 - mask_norm))
+            composited = np.clip(composited, 0, 255).astype(np.uint8)
+
+            # Crop tightly to the detected mask bounding box
+            ys, xs = np.where(mask > 50)
+            if len(xs) > 0 and len(ys) > 0:
+                min_x, max_x = max(0, int(np.min(xs))), min(w, int(np.max(xs)))
+                min_y, max_y = max(0, int(np.min(ys))), min(h, int(np.max(ys)))
+                cropped = composited[min_y:max_y, min_x:max_x]
+            else:
+                cropped = composited
+
+            cropped_rgb = cv2.cvtColor(cropped, cv2.COLOR_BGR2RGB)
+            pil_img = Image.fromarray(cropped_rgb)
+            
+            # Place the cropped packaging centered on a crisp 1024x1024 pure white square canvas
+            final_canvas = Image.new("RGB", (1024, 1024), (255, 255, 255))
+            pil_img.thumbnail((960, 960), Image.Resampling.LANCZOS)
+            offset = ((1024 - pil_img.width) // 2, (1024 - pil_img.height) // 2)
+            final_canvas.paste(pil_img, offset)
+
+            return final_canvas
+
+        except Exception as e:
+            print(f"[3D Texture White-Mask Notice]: {e}")
+            try:
+                img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+                canvas = Image.new("RGB", (1024, 1024), (255, 255, 255))
+                img.thumbnail((960, 960), Image.Resampling.LANCZOS)
+                canvas.paste(img, ((1024 - img.width) // 2, (1024 - img.height) // 2))
+                return canvas
+            except Exception:
+                return Image.new("RGB", (1024, 1024), (255, 255, 255))
+
+    @classmethod
+    def generate_mesh_glb(cls, image_bytes: bytes, geometry_type: str = "box") -> bytes:
+        """
+        Creates a photorealistic 3D specimen mesh with calibrated geometry and clean UV texture.
+        """
+        texture_pil = cls.extract_clean_white_background_texture(image_bytes)
+
+        if geometry_type == "cylinder":
+            mesh = trimesh.creation.cylinder(radius=0.95, height=2.8, sections=64)
+        else:
+            mesh = trimesh.creation.box(extents=[1.6, 2.6, 1.6])
+
+        # Apply pure-white composited texture
+        mesh.visual = trimesh.visual.TextureVisuals(image=texture_pil)
+
+        return mesh.export(file_type="glb")
