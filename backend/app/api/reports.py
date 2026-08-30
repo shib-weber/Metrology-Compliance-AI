@@ -1,164 +1,289 @@
+import io
 import json
-from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
-from sqlalchemy import desc, or_
+from sqlalchemy import desc
 
 from db.database import get_db, DBInspection
-from models.schemas import ActionUpdatePayload, FlagReportPayload
-from engine.pdf_generator import generate_inspection_notice
-from engine.rules_2011 import run_metrology_audit
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
 
 
+def generate_inspection_notice(audit_data: dict, product_name: str = None, declarations: dict = None) -> io.BytesIO:
+    declarations = declarations or {}
+    
+    resolved_name = (
+        product_name or 
+        declarations.get("product_name") or 
+        audit_data.get("product_name") or 
+        "Unidentified Packaged Specimen"
+    )
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=letter,
+        rightMargin=36,
+        leftMargin=36,
+        topMargin=36,
+        bottomMargin=36
+    )
+
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle('TStyle', parent=styles['Heading1'], fontSize=14, leading=18, textColor=colors.HexColor("#0f172a"), spaceAfter=3)
+    meta_style = ParagraphStyle('MStyle', parent=styles['Normal'], fontSize=8.5, leading=12, textColor=colors.HexColor("#475569"))
+    cell_style = ParagraphStyle('CStyle', parent=styles['Normal'], fontSize=8, leading=11, textColor=colors.HexColor("#0f172a"))
+    header_cell_style = ParagraphStyle('HCStyle', parent=styles['Normal'], fontSize=8, leading=11, fontName='Helvetica-Bold', textColor=colors.whitesmoke)
+
+    story = []
+
+    # Title & Legal Heading
+    story.append(Paragraph("LEGAL METROLOGY (PACKAGED COMMODITIES) RULES, 2011", title_style))
+    story.append(Paragraph("<b>Statutory Inspection &amp; Compliance Audit Certificate (Form V)</b>", styles['Heading3']))
+    story.append(Spacer(1, 6))
+
+    status_val = audit_data.get("status", "NON-COMPLIANT")
+    score = audit_data.get("compliance_score", 0)
+
+    story.append(Paragraph(
+        f"<b>Product Inspected:</b> {resolved_name} | <b>Compliance Status:</b> {status_val} ({score}/100)",
+        meta_style
+    ))
+    story.append(Spacer(1, 8))
+
+    # --- 1. VERIFIED STATUTORY DECLARATIONS TABLE ---
+    story.append(Paragraph("<b>Extracted Statutory Declarations Summary:</b>", styles['Heading4']))
+    story.append(Spacer(1, 3))
+
+    decl_records = [
+        [
+            Paragraph(f"<b>MRP:</b> {declarations.get('mrp') or 'NOT DETECTED (MISSING)'}", cell_style),
+            Paragraph(f"<b>Unit Sale Price:</b> {declarations.get('unit_sale_price') or 'NOT DECLARED'}", cell_style)
+        ],
+        [
+            Paragraph(f"<b>Net Quantity:</b> {declarations.get('net_quantity') or 'NOT DETECTED'}", cell_style),
+            Paragraph(f"<b>Batch / Lot No:</b> {declarations.get('batch_number') or 'NOT DETECTED'}", cell_style)
+        ],
+        [
+            Paragraph(f"<b>Manufacturing Date:</b> {declarations.get('mfg_date') or 'NOT DETECTED'}", cell_style),
+            Paragraph(f"<b>Expiry / Best Before:</b> {declarations.get('expiry_date') or 'NOT DETECTED'}", cell_style)
+        ],
+        [
+            Paragraph(f"<b>Generic Commodity Name:</b> {declarations.get('generic_name') or 'NOT DETECTED'}", cell_style),
+            Paragraph(f"<b>Country of Origin:</b> {declarations.get('country_of_origin') or 'NOT DETECTED'}", cell_style)
+        ],
+        [
+            Paragraph(f"<b>Manufacturer / Packer:</b> {str(declarations.get('manufacturer_details') or 'NOT DETECTED')[:90]}", cell_style),
+            Paragraph(f"<b>Consumer Helpline:</b> {declarations.get('consumer_care') or 'NOT DETECTED'}", cell_style)
+        ]
+    ]
+
+    t_decl = Table(decl_records, colWidths=[270, 270])
+    t_decl.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#f8fafc")),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
+        ('PADDING', (0, 0), (-1, -1), 4)
+    ]))
+    story.append(t_decl)
+    story.append(Spacer(1, 10))
+
+    # --- 2. SATISFIED STATUTORY PROVISIONS TABLE ---
+    compliances = audit_data.get("compliances", [])
+    story.append(Paragraph(f"<b>✓ Satisfied Statutory Provisions ({len(compliances)}):</b>", styles['Heading4']))
+    story.append(Spacer(1, 3))
+
+    comp_records = [[
+        Paragraph("Rule Section", header_cell_style),
+        Paragraph("Statutory Mandate", header_cell_style),
+        Paragraph("Observed Compliance &amp; Evidence", header_cell_style)
+    ]]
+
+    if compliances:
+        for c in compliances:
+            comp_records.append([
+                Paragraph(str(c.get("section", "Rule Passed")), cell_style),
+                Paragraph(str(c.get("title", "Compliant")), cell_style),
+                Paragraph(str(c.get("detail", "Satisfies metrological mandate")), cell_style)
+            ])
+    else:
+        comp_records.append([
+            Paragraph("N/A", cell_style),
+            Paragraph("None", cell_style),
+            Paragraph("No statutory provisions could be verified from extracted text.", cell_style)
+        ])
+
+    t_comp = Table(comp_records, colWidths=[90, 150, 300])
+    t_comp.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#065f46")),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('PADDING', (0, 0), (-1, -1), 4),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.HexColor("#f0fdf4"), colors.white]),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#bbf7d0"))
+    ]))
+    story.append(t_comp)
+    story.append(Spacer(1, 10))
+
+    # --- 3. INFRACTIONS TABLE ---
+    violations = audit_data.get("violations", [])
+    if isinstance(violations, str):
+        try:
+            violations = json.loads(violations)
+        except Exception:
+            violations = []
+
+    story.append(Paragraph(f"<b>✗ Identified Infractions ({len(violations)}):</b>", styles['Heading4']))
+    story.append(Spacer(1, 3))
+
+    viol_records = [[
+        Paragraph("Rule Section", header_cell_style),
+        Paragraph("Severity", header_cell_style),
+        Paragraph("Infraction Details", header_cell_style)
+    ]]
+
+    if violations:
+        for v in violations:
+            viol_records.append([
+                Paragraph(str(v.get("section", "Rule Violation")), cell_style),
+                Paragraph(str(v.get("severity", "CRITICAL")), cell_style),
+                Paragraph(str(v.get("detail", "Non-compliance noted")), cell_style)
+            ])
+    else:
+        viol_records.append([
+            Paragraph("N/A", cell_style),
+            Paragraph("CLEAN", cell_style),
+            Paragraph("All mandatory declarations are present and fully compliant.", cell_style)
+        ])
+
+    t_viol = Table(viol_records, colWidths=[90, 90, 360])
+    t_viol.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#881337")),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('PADDING', (0, 0), (-1, -1), 4),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.HexColor("#fff1f2"), colors.white]),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#fecdd3"))
+    ]))
+    story.append(t_viol)
+
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+
+
 @router.get("/list")
-def list_inspection_reports(
+async def get_inspection_reports(
     email: Optional[str] = Query(None),
     role: Optional[str] = Query(None),
-    flagged_only: bool = Query(False),
     db: Session = Depends(get_db)
 ):
-    """
-    Role-isolated inspection list:
-    - Citizen: Only sees inspections where created_by == their email.
-    - Inspector: Only sees inspections submitted by inspectors OR inspections flagged/reported by citizens.
-    """
+    query = db.query(DBInspection).order_by(desc(DBInspection.created_at))
+
+    if role and role.lower() in ["inspector", "admin"]:
+        pass
+    elif email:
+        query = query.filter(DBInspection.created_by == email.strip().lower())
+
+    records = query.all()
+    
+    results = []
+    for item in records:
+        try:
+            violations = json.loads(item.violations_json) if item.violations_json else []
+        except Exception:
+            violations = []
+
+        try:
+            compliances = json.loads(item.compliances_json) if item.compliances_json else []
+        except Exception:
+            compliances = []
+
+        try:
+            raw_decl = json.loads(item.raw_declarations_json) if item.raw_declarations_json else {}
+        except Exception:
+            raw_decl = {}
+
+        try:
+            textures = json.loads(item.textures_json) if item.textures_json else {}
+        except Exception:
+            textures = {}
+
+        try:
+            font_audit = json.loads(item.font_audit_json) if item.font_audit_json else {}
+        except Exception:
+            font_audit = {}
+
+        results.append({
+            "id": item.id,
+            "product_name": item.product_name,
+            "category": item.category,
+            "status": item.status,
+            "compliance_score": item.compliance_score,
+            "health_score": item.health_score,
+            "violations": violations,
+            "compliances": compliances,
+            "raw_declarations": raw_decl,
+            "textures": textures,
+            "font_audit": font_audit,
+            "created_by": item.created_by,
+            "created_at": item.created_at.isoformat() if hasattr(item, "created_at") and item.created_at else None,
+            "flagged_for_review": item.flagged_for_review,
+            "inspector_action": "VERIFIED" if item.status == "COMPLIANT" else "PENDING"
+        })
+
+    return results
+
+
+# Support both /api/reports/{id}/pdf and /api/reports/download/{id}
+@router.get("/{inspection_id}/pdf")
+@router.get("/download/{inspection_id}")
+async def download_inspection_notice(inspection_id: int, db: Session = Depends(get_db)):
+    record = db.query(DBInspection).filter(DBInspection.id == inspection_id).first()
+    if not record:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Inspection record with ID {inspection_id} not found."
+        )
+
     try:
-        clean_email = email.strip().lower() if email else ""
-        query = db.query(DBInspection)
+        violations = json.loads(record.violations_json) if record.violations_json else []
+    except Exception:
+        violations = []
 
-        if role == "citizen" and clean_email:
-            query = query.filter(DBInspection.created_by == clean_email)
-        elif role == "inspector":
-            if flagged_only:
-                query = query.filter(DBInspection.flagged_for_review == True)
-            else:
-                # Inspector sees their own scans + any scans flagged by citizens
-                query = query.filter(
-                    or_(
-                        DBInspection.flagged_for_review == True,
-                        DBInspection.created_by == clean_email,
-                        DBInspection.created_by.ilike("%inspector%")
-                    )
-                )
-        elif clean_email:
-            query = query.filter(DBInspection.created_by == clean_email)
+    try:
+        compliances = json.loads(record.compliances_json) if record.compliances_json else []
+    except Exception:
+        compliances = []
 
-        records = query.order_by(desc(DBInspection.id)).all()
-        result = []
+    try:
+        raw_declarations = json.loads(record.raw_declarations_json) if record.raw_declarations_json else {}
+    except Exception:
+        raw_declarations = {}
 
-        for r in records:
-            try:
-                viols = json.loads(r.violations_json) if r.violations_json else []
-            except Exception:
-                viols = []
-
-            try:
-                comps = json.loads(r.compliances_json) if r.compliances_json else []
-            except Exception:
-                comps = []
-
-            try:
-                decls = json.loads(r.raw_declarations_json) if r.raw_declarations_json else {}
-            except Exception:
-                decls = {}
-
-            try:
-                panel_txts = json.loads(r.panel_texts_json) if r.panel_texts_json else {}
-            except Exception:
-                panel_txts = {}
-
-            try:
-                textures = json.loads(r.textures_json) if r.textures_json else {}
-            except Exception:
-                textures = {}
-
-            result.append({
-                "id": r.id,
-                "product_name": r.product_name,
-                "category": r.category,
-                "status": r.status,
-                "compliance_score": r.compliance_score,
-                "health_score": r.health_score,
-                "glb_url": r.glb_url,
-                "created_by": r.created_by,
-                "flagged_for_review": r.flagged_for_review,
-                "inspector_action": r.inspector_action,
-                "action_notes": r.action_notes,
-                "action_by": r.action_by,
-                "action_taken_at": r.action_taken_at.isoformat() if r.action_taken_at else None,
-                "created_at": r.created_at.isoformat() if r.created_at else None,
-                "violations": viols,
-                "compliances": comps,
-                "declarations": decls,
-                "panel_texts": panel_txts,
-                "textures": textures
-            })
-        return result
-    except Exception as e:
-        print(f"[Reports API Error]: {e}")
-        return []
-
-
-@router.post("/flag")
-def flag_inspection_to_inspector(payload: FlagReportPayload, db: Session = Depends(get_db)):
-    """Citizens call this when a product is non-compliant to report it to the Inspector."""
-    rec = db.query(DBInspection).filter(DBInspection.id == payload.report_id).first()
-    if not rec:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan record not found")
-    
-    rec.flagged_for_review = True
-    if payload.notes:
-        rec.action_notes = f"Citizen Report Note: {payload.notes}"
-    db.commit()
-    return {"status": "success", "message": f"Scan #{payload.report_id} forwarded to Enforcement Desk"}
-
-
-@router.post("/{inspection_id}/action")
-def update_inspector_action(inspection_id: int, payload: ActionUpdatePayload, db: Session = Depends(get_db)):
-    """Inspectors take legal action against reported/audited products."""
-    rec = db.query(DBInspection).filter(DBInspection.id == inspection_id).first()
-    if not rec:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Record not found")
-
-    rec.inspector_action = payload.action
-    rec.action_notes = payload.notes
-    rec.action_by = payload.inspector_email
-    rec.action_taken_at = datetime.now(timezone.utc)
-    
-    db.commit()
-    return {
-        "status": "success",
-        "action": rec.inspector_action,
-        "action_taken_at": rec.action_taken_at.isoformat()
+    audit_data = {
+        "status": record.status,
+        "compliance_score": record.compliance_score,
+        "violations": violations,
+        "compliances": compliances
     }
 
+    pdf_buffer = generate_inspection_notice(
+        audit_data=audit_data,
+        product_name=record.product_name,
+        declarations=raw_declarations
+    )
 
-@router.get("/{inspection_id}/pdf")
-def export_pdf_report(inspection_id: int, db: Session = Depends(get_db)):
-    rec = db.query(DBInspection).filter(DBInspection.id == inspection_id).first()
-    if not rec:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inspection report not found")
-
-    try:
-        raw_decl = json.loads(rec.raw_declarations_json or "{}")
-        audit_data = {
-            "status": rec.status,
-            "compliance_score": rec.compliance_score,
-            "violations": json.loads(rec.violations_json or "[]"),
-            "compliances": json.loads(rec.compliances_json or "[]")
-        }
-    except Exception:
-        raw_decl = {}
-        audit_data = run_metrology_audit(raw_decl)
-
-    buffer = generate_inspection_notice(audit_data, rec.product_name, raw_decl)
-
-    return StreamingResponse(
-        buffer,
+    filename = f"Inspection_Report_{inspection_id}.pdf"
+    return Response(
+        content=pdf_buffer.getvalue(),
         media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename=notice_inspection_{inspection_id}.pdf"}
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}"
+        }
     )

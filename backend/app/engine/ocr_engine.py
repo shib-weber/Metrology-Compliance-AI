@@ -3,6 +3,7 @@ import re
 import cv2
 import numpy as np
 from PIL import Image
+from typing import Optional, List, Tuple, Union
 
 _engine = None
 
@@ -87,7 +88,7 @@ def detect_barcode_from_image(img_np: np.ndarray) -> list:
     return detected_codes
 
 
-def lookup_gs1_country(barcode: str) -> str:
+def lookup_gs1_country(barcode: str) -> Optional[str]:
     if not barcode or len(barcode) < 3:
         return None
     clean_code = re.sub(r'\D', '', barcode)
@@ -123,7 +124,7 @@ def extract_raw_text_single_image(image_bytes: bytes, panel_name: str = "panel")
             cv2.rotate(img_np, cv2.ROTATE_90_COUNTERCLOCKWISE)
         ]
 
-        keywords = ["mrp", "rs", "batch", "pkg", "mfg", "exp", "net", "qty", "date", "max", "price", "taxes", "solution", "drops", "relief"]
+        keywords = ["mrp", "usp", "rs", "batch", "pkg", "mfg", "exp", "net", "qty", "vol", "date", "max", "price", "taxes", "lic", "fssai"]
 
         for candidate_img in orientations:
             enhanced_np = preprocess_for_ocr(candidate_img)
@@ -161,9 +162,9 @@ def extract_raw_text_single_image(image_bytes: bytes, panel_name: str = "panel")
 
 
 def detect_country_of_origin(corpus: str, barcode_candidates: list) -> tuple:
-    india_pattern = r'\b(?:india|indian|made\s*in\s*india|mfg\s*in\s*india|packaged\s*in\s*india)\b'
+    india_pattern = r'\b(?:india|indian|made\s*in\s*india|mfg\s*in\s*india|packaged\s*in\s*india|pkd\s*in\s*india)\b'
     if re.search(india_pattern, corpus, re.I):
-        return "India", "Explicit text match (Made in India)"
+        return "India", "Explicit text match on packaging"
 
     all_barcodes = list(barcode_candidates)
     raw_ean_matches = re.findall(r'\b(890\d{10}|[0-9]{12,14})\b', corpus)
@@ -174,28 +175,56 @@ def detect_country_of_origin(corpus: str, barcode_candidates: list) -> tuple:
         if country_by_bc:
             return country_by_bc, f"Derived from GS1 Barcode ({bc})"
 
-    pincode_match = re.search(r'(?:pin|postal|code|dist|solan|himachal|punjab|delhi|mumbai|road)[^\d\n]{0,25}\b([1-8][0-9]{5})\b', corpus, re.I)
-    if not pincode_match:
-        pincode_match = re.search(r'\b([1-8][0-9]{5})\b', corpus)
+    pincode_match = re.search(r'(?:pin|postal|code|dist|road)[^\d\n]{0,25}\b([1-8][0-9]{5})\b', corpus, re.I)
     if pincode_match:
-        return "India", f"Derived from Indian Postal PIN code ({pincode_match.group(1)})"
+        return "India", f"Derived from Indian PIN code ({pincode_match.group(1)})"
 
     for state in INDIAN_STATES:
         if re.search(r'\b' + re.escape(state) + r'\b', corpus, re.I):
-            return "India", f"Derived from Indian State ({state.title()})"
+            return "India", f"Derived from State ({state.title()})"
 
     for abbr in INDIAN_STATE_ABBR:
         if re.search(abbr, corpus, re.I):
-            return "India", "Derived from Indian State Abbreviation"
+            return "India", "Derived from State Abbreviation"
 
-    return "India", "Presumed Domestic Market Commodity (PIN / Reg Evidence)"
+    foreign_countries = [
+        "China", "United States", "USA", "Germany", "United Kingdom", "UK", 
+        "Japan", "Vietnam", "Thailand", "Singapore", "Switzerland", "France"
+    ]
+    for fc in foreign_countries:
+        if re.search(r'\b(?:made\s*in|mfg\s*in|origin\s*:\s*)?\s*' + re.escape(fc) + r'\b', corpus, re.I):
+            return fc, f"Explicit Country Mention ({fc})"
+
+    return None, "Not Detected"
 
 
-def parse_accurate_product_name(corpus_lines: list, combined_corpus: str) -> tuple[str, str]:
+def clean_ocr_corpus_anomalies(text: str) -> str:
     """
-    Intelligently extracts the brand commercial name and statutory generic commodity identity.
+    Normalizes common OCR misrecognitions, dot-matrix splits, and letter-to-number confusions.
     """
-    # 1. Look for known high-profile brand keywords on Front panel
+    # 1. Price keyword misreads
+    text = re.sub(r'\b(Pnoo|Pnco|Pnce|Pnso|Pnoe|Prc|Prce|Pric)\b', 'Price', text, flags=re.I)
+    
+    # 2. 'Inclusive of all taxes' misreads
+    text = re.sub(r'\b(?:ncotallxa|incofalltax|nclofall|ncofall|ncl\s*of\s*all|incl\s*of\s*all|inclusiv\w*)\b', 'incl of all taxes', text, flags=re.I)
+    
+    # 3. Unit Sale Price (USP) misreads
+    text = re.sub(r'\b(?:U\.?S\.?P\.?|Unit\s*Sale\s*Price|Unit\s*Price|U\s*S\s*P)\b', 'USP', text, flags=re.I)
+
+    # 4. Net Quantity OCR corrections (e.g. 1Oml, lOml, 1Om1 -> 10 ml)
+    text = re.sub(r'\b([0-9IlO]+)\s*m[1lI]\b', r'\1 ml', text, flags=re.I)
+    text = re.sub(r'\b([0-9]+)\s*g(?:ms?|m)?\b', r'\1 g', text, flags=re.I)
+    text = re.sub(r'\b([0-9]+)\s*k(?:g|gs)?\b', r'\1 kg', text, flags=re.I)
+    text = re.sub(r'\b([0-9]+)\s*l(?:tr|trs|iters?)?\b', r'\1 L', text, flags=re.I)
+
+    # 5. Month typos (e.g. DCT2025 -> OCT 2025, 0CT2025 -> OCT 2025)
+    text = re.sub(r'\b(?:DCT|0CT|QCT)(\d{4})\b', r'OCT \1', text, flags=re.I)
+    text = re.sub(r'\b(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)(\d{4})\b', r'\1 \2', text, flags=re.I)
+    
+    return text
+
+
+def parse_accurate_product_name(corpus_lines: list, combined_corpus: str) -> tuple[Optional[str], Optional[str]]:
     brand_title = None
     generic_title = None
 
@@ -207,33 +236,152 @@ def parse_accurate_product_name(corpus_lines: list, combined_corpus: str) -> tup
 
     search_target = front_text if front_text else combined_corpus
 
-    # Generic formulation discovery (e.g. OXYMETAZOLINE HYDROCHLORIDE NASAL SOLUTION)
     pharma_match = re.search(
-        r'([A-Za-z\s]+(?:HYDROCHLORIDE|SOLUTION|DROPS|SYRUP|TABLETS|CAPSULES|OINTMENT|CREAM|GEL|SPRAY|SUSPENSION)(?:\s+I\.?P\.?|\s+B\.?P\.?|\s+U\.?S\.?P\.?)?)',
+        r'([A-Za-z\s]+(?:HYDROCHLORIDE|SOLUTION|DROPS|SYRUP|TABLETS|CAPSULES|OINTMENT|CREAM|GEL|SPRAY|SUSPENSION|OIL|POWDER|SOAP|CLEANSER|PASTE)(?:\s+I\.?P\.?|\s+B\.?P\.?|\s+U\.?S\.?P\.?)?)',
         search_target,
         re.I
     )
     if pharma_match:
         generic_title = pharma_match.group(1).strip()
 
-    # Brand Title Extraction (e.g. Otrivin Oxy / Otrivin)
-    brand_match = re.search(r'\b(Otrivin(?:\s+Oxy)?|Vicks|Dettol|Crocin|Paracetamol|Volini|Vaseline|Nivea|Himalaya|Colgate|Dabur)\b', search_target, re.I)
-    if brand_match:
-        brand_title = brand_match.group(0).upper()
-    else:
-        # Pick the cleanest prominent line from front face
-        for raw_l in search_target.split("\n"):
-            clean_l = re.sub(r'^[\[A-Z_\s\]]+:\s*', '', raw_l).strip()
-            if 3 < len(clean_l) < 35 and not any(k in clean_l.lower() for k in [
-                "mrp", "exp", "mfd", "batch", "net", "rs", "₹", "incl", "panel", "contains", "face", "dosage", "keep", "protect"
+    candidates = []
+    for raw_l in search_target.split("\n"):
+        clean_l = re.sub(r'^[\[A-Z_\s\]]+:\s*', '', raw_l).strip()
+        if 2 < len(clean_l) < 50:
+            if not any(k in clean_l.lower() for k in [
+                "mrp", "usp", "exp", "mfd", "batch", "net", "rs", "₹", "incl", "panel", "contains",
+                "face", "dosage", "keep", "protect", "warning", "store", "lic", "regd", "trade", "price", "taxes"
             ]):
-                brand_title = clean_l
-                break
+                candidates.append(clean_l)
 
-    resolved_brand = brand_title or generic_title or "Packaged Commodity"
-    resolved_generic = generic_title or "Nasal Decongestant Solution"
+    if candidates:
+        brand_title = candidates[0]
+        if not generic_title and len(candidates) > 1:
+            generic_title = candidates[1]
 
-    return resolved_brand, resolved_generic
+    return brand_title, generic_title
+
+
+def extract_accurate_mrp(corpus: str) -> tuple[Optional[str], Optional[float], bool]:
+    """
+    Extracts numerical MRP and verifies whether 'inclusive of all taxes' is declared.
+    Returns: (formatted_string, numeric_float_val, is_tax_inclusive)
+    """
+    tax_patterns = [
+        r'incl(?:usive)?\s*(?:of)?\s*(?:all)?\s*taxes?',
+        r'incl\.\s*of\s*all\s*taxes?',
+        r'all\s*taxes?\s*incl(?:uded)?',
+        r'inclusive'
+    ]
+    is_tax_inclusive_declared = any(re.search(p, corpus, re.I) for p in tax_patterns)
+
+    # Search for MRP keywords and handle spaced decimals like '120 7' or '120 70'
+    mrp_match = re.search(
+        r'(?:M\.?R\.?P|Max\.?\s*Retail\s*Price|Retail\s*Price|Price)[^\d\n]{0,12}(?:Rs\.?|₹|INR)?\s*([0-9]{1,5})(?:[\s.·,]([0-9]{1,2}))?',
+        corpus,
+        re.I
+    )
+    if not mrp_match:
+        mrp_match = re.search(r'(?:Rs\.?|₹|INR)\s*([0-9]{1,5})(?:[\s.·,]([0-9]{1,2}))?', corpus, re.I)
+
+    if mrp_match:
+        integer_part = mrp_match.group(1)
+        decimal_part = mrp_match.group(2)
+        
+        if decimal_part:
+            decimal_str = decimal_part if len(decimal_part) == 2 else f"{decimal_part}0"
+            price_float = float(f"{integer_part}.{decimal_str}")
+            formatted_price = f"{integer_part}.{decimal_str}"
+        else:
+            price_float = float(integer_part)
+            formatted_price = f"{integer_part}.00"
+
+        if is_tax_inclusive_declared:
+            return f"₹ {formatted_price} (Incl. of all taxes)", price_float, True
+        else:
+            return f"₹ {formatted_price}", price_float, False
+
+    return None, None, False
+
+
+def extract_accurate_net_quantity(corpus: str) -> tuple[Optional[str], Optional[float], Optional[str]]:
+    """
+    Extracts Net Quantity with accurate standard metric units (Rule 6(1)(c)).
+    Returns: (formatted_string, numeric_magnitude, metric_unit)
+    """
+    # 1. Look for explicit labeled Net Quantity
+    qty_match = re.search(
+        r'(?:Net\s*(?:Qty|Quantity|Weight|Wt|Vol|Volume)|N\.W\.|Contents)[^\d\n]{0,10}([0-9]+(?:\.[0-9]+)?)\s*(kg|g|gm|gms|ml|l|ltr|ltrs|mg|m|cm|u|n|pcs|tablets|capsules|doses?)\b',
+        corpus,
+        re.I
+    )
+    
+    # 2. Look for standalone metric quantity indicators
+    if not qty_match:
+        qty_match = re.search(
+            r'\b([0-9]+(?:\.[0-9]+)?)\s*(ml|g|gm|gms|kg|l|ltr|mg|tablets|capsules)\b',
+            corpus,
+            re.I
+        )
+
+    if qty_match:
+        val_str = qty_match.group(1)
+        # Correct OCR 'O' or 'l' in numbers if any
+        val_str = val_str.replace('O', '0').replace('l', '1')
+        val_float = float(val_str)
+        raw_unit = qty_match.group(2).lower()
+
+        # Standardize metric unit names
+        unit_map = {
+            "gm": "g", "gms": "g", "g": "g",
+            "kg": "kg", "kgs": "kg",
+            "ml": "ml", "m1": "ml",
+            "l": "L", "ltr": "L", "ltrs": "L",
+            "mg": "mg", "u": "N", "n": "N", "pcs": "N"
+        }
+        std_unit = unit_map.get(raw_unit, raw_unit)
+        return f"{val_float if val_float % 1 != 0 else int(val_float)} {std_unit}", val_float, std_unit
+
+    return None, None, None
+
+
+def extract_accurate_usp(
+    corpus: str, 
+    mrp_num: Optional[float] = None, 
+    qty_num: Optional[float] = None, 
+    qty_unit: Optional[str] = None
+) -> tuple[Optional[str], str]:
+    """
+    Extracts printed USP and compares it with calculated USP under Rule 6(1)(da).
+    Returns: (usp_formatted_string, detection_type)
+    """
+    # 1. Search for explicitly declared USP on the packaging
+    # Matches formats: "USP Rs. 12.08 / ml", "USP: Rs 12.08/ml", "USP Rs 12 08 per ml", "Rs. 1.20 / g"
+    usp_match = re.search(
+        r'(?:USP|Unit\s*Sale\s*Price|Unit\s*Price)[^\d\n]{0,12}(?:Rs\.?|₹|INR)?\s*([0-9]{1,5})(?:[\s.·,]([0-9]{1,2}))?\s*(?:/|per)\s*([a-zA-Z]+)',
+        corpus,
+        re.I
+    )
+
+    if usp_match:
+        integer_part = usp_match.group(1)
+        decimal_part = usp_match.group(2)
+        unit_part = usp_match.group(3).strip().lower()
+
+        if decimal_part:
+            decimal_str = decimal_part if len(decimal_part) == 2 else f"{decimal_part}0"
+            price_val = f"{integer_part}.{decimal_str}"
+        else:
+            price_val = f"{integer_part}.00"
+
+        return f"₹ {price_val} / {unit_part}", "OPTICALLY_EXTRACTED"
+
+    # 2. If USP is not printed, compute the statutory expected USP from MRP and Net Qty
+    if mrp_num and qty_num and qty_num > 0 and qty_unit:
+        calc_price = round(mrp_num / qty_num, 2)
+        return f"₹ {calc_price:.2f} / {qty_unit}", "CALCULATED_METRIC"
+
+    return None, "NOT_DECLARED"
 
 
 def synthesize_statutory_declarations(raw_text_per_panel: dict, detected_barcodes: list = None) -> dict:
@@ -255,7 +403,8 @@ def synthesize_statutory_declarations(raw_text_per_panel: dict, detected_barcode
             panel_text = panel_data
 
         if panel_text and panel_text != "NO_TEXT_DETECTED" and not panel_text.startswith("[OCR Error"):
-            corpus_lines.append(f"[{panel_name.upper()} FACE]\n{panel_text}")
+            cleaned_panel_text = clean_ocr_corpus_anomalies(panel_text)
+            corpus_lines.append(f"[{panel_name.upper()} FACE]\n{cleaned_panel_text}")
 
     combined_corpus = "\n".join(corpus_lines)
 
@@ -268,39 +417,33 @@ def synthesize_statutory_declarations(raw_text_per_panel: dict, detected_barcode
     final_barcodes = list(set(detected_barcodes + text_barcodes))
 
     # 3. MRP Extraction
-    mrp_match = re.search(
-        r'(?:M\.?R\.?P|Max\.?\s*Retail\s*Price|Price|Retail\s*Price)[^\d\n]{0,12}(?:Rs\.?|₹|INR)?\s*([0-9]{1,5}(?:\.[0-9]{1,2})?)',
+    mrp_str, mrp_numeric, is_taxes_included = extract_accurate_mrp(combined_corpus)
+
+    # 4. Net Quantity Extraction
+    net_qty_str, qty_numeric, qty_unit = extract_accurate_net_quantity(combined_corpus)
+
+    # 5. Unit Sale Price (USP) Extraction & Cross-Verification
+    usp_str, usp_source = extract_accurate_usp(combined_corpus, mrp_numeric, qty_numeric, qty_unit)
+
+    # 6. Batch & Expiry (with month normalization)
+    batch_match = re.search(r'(?:Batch(?:\s*No\.?)?|B\.?\s*No\.?|Lot(?:\s*No\.?)?)[^\w\n]{0,6}([A-Za-z0-9/-]{3,18})', combined_corpus, re.I)
+    batch_val = batch_match.group(1) if batch_match else None
+
+    mfg_match = re.search(
+        r'(?:MFD|Mfg(?:\s*Date)?|Pkd|Packed|Date\s*of\s*Mfg)[^\w\n]{0,6}([0-9]{1,2}[/-][0-9]{2,4}|[A-Za-z]{3,9}\s*(?:20)?\d{2})',
         combined_corpus,
         re.I
     )
-    if not mrp_match:
-        mrp_match = re.search(r'(?:Rs\.?|₹)\s*([0-9]{1,5}(?:\.[0-9]{1,2})?)', combined_corpus)
+    mfg_val = mfg_match.group(1) if mfg_match else None
 
-    tax_incl = bool(re.search(r'(?:incl|taxes|all\s*tax)', combined_corpus, re.I))
-    mrp_val = None
-    if mrp_match:
-        val = mrp_match.group(1)
-        mrp_val = f"₹ {val} (Incl. of all taxes)" if tax_incl else f"₹ {val}"
-
-    # 4. Net Quantity
-    qty_match = re.search(
-        r'(?:Net\s*(?:Qty|Quantity|Weight|Vol|Volume)|N\.W\.)[^\d\n]{0,10}(\d+(?:\.\d+)?)\s*(kg|g|gm|gms|ml|l|ltr|ltrs|m|cm|u|n|pcs|dose)\b', 
-        combined_corpus, 
+    exp_match = re.search(
+        r'(?:EXP|Expiry(?:\s*Date)?|Use\s*by|Best\s*Before)[^\w\n]{0,6}([0-9]{1,2}[/-][0-9]{2,4}|[A-Za-z]{3,9}\s*(?:20)?\d{2})',
+        combined_corpus,
         re.I
     )
-    if not qty_match:
-        qty_match = re.search(r'\b(\d+(?:\.\d+)?)\s*(ml|g|gm|kg|l)\b', combined_corpus, re.I)
+    exp_val = exp_match.group(1) if exp_match else None
 
-    net_qty_val = f"{qty_match.group(1)} {qty_match.group(2)}" if qty_match else "10 ml"
-
-    # 5. Batch & Expiry
-    batch_match = re.search(r'(?:Batch(?:\s*No\.?)?|B\.?\s*No\.?|Lot(?:\s*No\.?)?)[^\w\n]{0,6}([A-Za-z0-9/-]{4,15})', combined_corpus, re.I)
-    batch_val = batch_match.group(1) if batch_match else "PX250820"
-
-    mfg_match = re.search(r'(?:MFD|Mfg(?:\s*Date)?|Pkd|Packed|Date\s*of\s*Mfg)[^\w\n]{0,6}([0-9]{1,2}[/-][0-9]{2,4}|[A-Za-z]{3,9}\s*(?:20)?\d{2})', combined_corpus, re.I)
-    exp_match = re.search(r'(?:EXP|Expiry(?:\s*Date)?|Use\s*by|Best\s*Before)[^\w\n]{0,6}([0-9]{1,2}[/-][0-9]{2,4}|[A-Za-z]{3,9}\s*(?:20)?\d{2})', combined_corpus, re.I)
-
-    # 6. Consumer Care
+    # 7. Consumer Care
     email_match = re.search(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', combined_corpus)
     phone_match = re.search(r'(?:\+91|0)?[-\s]?[6-9]\d{9}|1800[-\s]?\d{3}[-\s]?\d{3,4}', combined_corpus)
     
@@ -310,21 +453,23 @@ def synthesize_statutory_declarations(raw_text_per_panel: dict, detected_barcode
     if phone_match:
         grievance_parts.append(phone_match.group(0))
 
-    consumer_care = " | ".join(grievance_parts) if grievance_parts else "Declared on packaging"
+    consumer_care = " | ".join(grievance_parts) if grievance_parts else (
+        "Declared on packaging" if re.search(r'(?:customer\s*care|consumer\s*relations|helpline|grievance)', combined_corpus, re.I) else None
+    )
 
-    # 7. Manufacturer & Marketer Details
+    # 8. Manufacturer & Marketer Details
     mfg_details = None
     mfg_block = re.search(r'((?:Marketed|Manufactured|Mfg|Mktg)\s*By[^\n]+(?:\n[^\n]+){1,3})', combined_corpus, re.I)
     if mfg_block:
         mfg_details = re.sub(r'^[A-Z_]+:\s*', '', mfg_block.group(1)).strip().replace('\n', ', ')
-    elif len(combined_corpus) > 20:
+    elif re.search(r'(?:mfg|marketed|manufactured|packed)\s*by', combined_corpus, re.I):
         mfg_details = "Declared on packaging"
 
-    # 8. License
+    # 9. License
     lic_match = re.search(r'(?:Mfg\.?\s*Lic\.?\s*No\.?|FSSAI|Lic\s*No\.?)\s*[:.]?\s*([A-Za-z0-9/-]+)', combined_corpus, re.I)
     lic_val = lic_match.group(1) if lic_match else None
 
-    # 9. Nutrition Info
+    # 10. Nutrition Info
     sugar_match = re.search(r'(?:Sugar|Added\s*Sugars)\s*[:.]?\s*(\d+(?:\.\d+)?)', combined_corpus, re.I)
     fat_match = re.search(r'(?:Saturated\s*Fat|Total\s*Fat|Fat)\s*[:.]?\s*(\d+(?:\.\d+)?)', combined_corpus, re.I)
     sodium_match = re.search(r'(?:Sodium|Na)\s*[:.]?\s*(\d+(?:\.\d+)?)', combined_corpus, re.I)
@@ -335,12 +480,17 @@ def synthesize_statutory_declarations(raw_text_per_panel: dict, detected_barcode
         "category": "FOOD" if is_food else "NON_FOOD / PHARMA",
         "product_name": product_name,
         "generic_name": generic_name,
-        "net_quantity": net_qty_val,
-        "mrp": mrp_val or "₹ 120.79 (Incl. of all taxes)",
-        "unit_sale_price": None,
+        "net_quantity": net_qty_str,
+        "net_quantity_numeric": qty_numeric,
+        "net_quantity_unit": qty_unit,
+        "mrp": mrp_str,
+        "mrp_numeric": mrp_numeric,
+        "is_taxes_included_declared": is_taxes_included,
+        "unit_sale_price": usp_str,
+        "usp_detection_source": usp_source,
         "batch_number": batch_val,
-        "mfg_date": mfg_match.group(1) if mfg_match else "OCT 2025",
-        "expiry_date": exp_match.group(1) if exp_match else "SEP 2028",
+        "mfg_date": mfg_val,
+        "expiry_date": exp_val,
         "manufacturer_details": mfg_details,
         "license_number": lic_val,
         "consumer_care": consumer_care,
@@ -357,20 +507,4 @@ def synthesize_statutory_declarations(raw_text_per_panel: dict, detected_barcode
         }
     }
 
-    _post_process_unit_sale_price(parsed)
     return parsed
-
-
-def _post_process_unit_sale_price(parsed: dict) -> None:
-    if not parsed.get("unit_sale_price") and parsed.get("mrp") and parsed.get("net_quantity"):
-        mrp_m = re.search(r'[\d\.]+', str(parsed["mrp"]))
-        qty_m = re.search(r'[\d\.]+', str(parsed["net_quantity"]))
-        if mrp_m and qty_m:
-            try:
-                price = float(mrp_m.group(0))
-                qty = float(qty_m.group(0))
-                unit = re.sub(r'[\d\.\s]+', '', str(parsed["net_quantity"])).strip() or "unit"
-                if qty > 0:
-                    parsed["unit_sale_price"] = f"₹ {round(price / qty, 2)} / {unit}"
-            except Exception:
-                pass

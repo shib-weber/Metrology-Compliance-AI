@@ -62,7 +62,7 @@ async def analyze_commodity(
             b64_str = base64.b64encode(raw_bytes).decode("utf-8")
             cleaned_textures[panel_id] = f"data:image/jpeg;base64,{b64_str}"
             if primary_vision_meta is None:
-                primary_vision_meta = {"shape_type": "box", "pdp_area_sq_cm": 32.5}
+                primary_vision_meta = {"shape_type": "box", "pdp_area_sq_cm": 0.0}
 
         # Multi-orientation OCR pass
         ocr_result = extract_raw_text_single_image(cropped_bytes, panel_id)
@@ -71,16 +71,17 @@ async def analyze_commodity(
         del raw_bytes, cropped_bytes
         gc.collect()
 
-    # 2. Synthesize complete declarations from corpus
+    # 1. Synthesize extracted declarations
     extracted = synthesize_statutory_declarations(panel_extracted_texts) or {}
 
-    # 3. Rule 7 Font & PDP Ratio Check
+    # 2. Rule 7 Font & PDP Ratio Check (using actual detected metadata)
+    calculated_pdp = primary_vision_meta.get("pdp_area_sq_cm", 0.0) if primary_vision_meta else 0.0
     font_audit = audit_font_and_pdp_compliance(
-        pdp_area_sq_cm=primary_vision_meta.get("pdp_area_sq_cm", 32.5) if primary_vision_meta else 32.5,
+        pdp_area_sq_cm=calculated_pdp,
         detected_font_mm=extracted.get("measured_font_height_mm", 1.6)
     )
 
-    # 4. Statutory Rules Audit
+    # 3. Statutory Rules Audit
     compliance = run_metrology_audit(extracted)
     if font_audit.get("font_compliance_status") == "NON-COMPLIANT" and font_audit.get("violation"):
         compliance.setdefault("violations", []).append(font_audit["violation"])
@@ -88,18 +89,20 @@ async def analyze_commodity(
         compliance["compliance_score"] = max(0, compliance.get("compliance_score", 100) - 15)
         compliance["status"] = "NON-COMPLIANT"
 
-    # 5. Nutrition Evaluation
+    # 4. Nutrition Evaluation
     nutrition_info = extracted.get("nutrition", {})
     health = calculate_nutri_health(nutrition_info) if nutrition_info.get("is_applicable") else None
-    product_name = extracted.get("product_name") or "OXYMETAZOLINE HYDROCHLORIDE"
+    
+    # 5. Resolved product name directly from OCR (or None if unrecognized)
+    product_name = extracted.get("product_name") or "Unidentified Commodity"
 
     # 6. Database Persistence
     try:
         db_item = DBInspection(
             product_name=product_name,
             category=extracted.get("category", "NON_FOOD / PHARMA"),
-            status=compliance.get("status", "COMPLIANT"),
-            compliance_score=compliance.get("compliance_score", 100),
+            status=compliance.get("status", "NON-COMPLIANT"),
+            compliance_score=compliance.get("compliance_score", 0),
             health_score=health["health_score"] if health else 0,
             violations_json=json.dumps(compliance.get("violations", [])),
             compliances_json=json.dumps(compliance.get("compliances", [])),
@@ -136,15 +139,16 @@ async def analyze_commodity(
         "geometry": primary_vision_meta.get("shape_type", "box") if primary_vision_meta else "box",
         "created_by": submitter_email,
         "flagged_for_review": (compliance.get("status") == "NON-COMPLIANT"),
-        "inspector_action": "VERIFIED"
+        "inspector_action": "PENDING" if compliance.get("status") == "NON-COMPLIANT" else "VERIFIED"
     }
 
 
 @router.post("/generate-digital-twin")
 async def generate_digital_twin(file: UploadFile = File(...)):
     raw_bytes = await file.read()
-    glb_data = DigitalTwin3DGenerator.generate_mesh_glb(raw_bytes)
-    del raw_bytes
+    cleaned_bytes, _ = clean_and_crop_panel(raw_bytes)
+    glb_data = DigitalTwin3DGenerator.generate_mesh_glb(cleaned_bytes)
+    del raw_bytes, cleaned_bytes
     gc.collect()
 
     return Response(
