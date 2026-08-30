@@ -51,7 +51,6 @@ export default function TurntableScanner({ onComplete, email }) {
   const [errorMessage, setErrorMessage] = useState('');
   const [highlightSnapPrompt, setHighlightSnapPrompt] = useState(false);
 
-  // Centered square tracker state in container percentages [0-100]
   const [trackedCenter, setTrackedCenter] = useState({ x: 50, y: 50 });
   const [isObjectDetected, setIsObjectDetected] = useState(false);
 
@@ -76,7 +75,6 @@ export default function TurntableScanner({ onComplete, email }) {
     }
   }, [cameraActive]);
 
-  // Object Center-Of-Mass Tracking Loop (Maintains clean square aspect)
   const trackObject = useCallback(() => {
     if (!videoRef.current || !cameraActive || isSnappingAnimation) {
       animFrameIdRef.current = requestAnimationFrame(trackObject);
@@ -127,9 +125,8 @@ export default function TurntableScanner({ onComplete, email }) {
       const rawCenterX = (sumX / edgeCount / tCanvas.width) * 100;
       const rawCenterY = (sumY / edgeCount / tCanvas.height) * 100;
 
-      // Constrain center so the square frame never clips outside view
-      const targetX = Math.max(40, Math.min(60, rawCenterX));
-      const targetY = Math.max(40, Math.min(60, rawCenterY));
+      const targetX = Math.max(35, Math.min(65, rawCenterX));
+      const targetY = Math.max(35, Math.min(65, rawCenterY));
 
       const cur = trackedCenterRef.current;
       const lerp = (a, b, f) => a + (b - a) * f;
@@ -198,7 +195,6 @@ export default function TurntableScanner({ onComplete, email }) {
 
   useEffect(() => () => stopCamera(), []);
 
-  // Optical Square Snap Execution (Extracts Clean 1:1 High-Res Object Crop)
   const snapWithTracking = () => {
     if (!videoRef.current || isSnappingAnimation) return;
 
@@ -216,19 +212,15 @@ export default function TurntableScanner({ onComplete, email }) {
       const vw = video.videoWidth || 1920;
       const vh = video.videoHeight || 1080;
 
-      // Extract largest possible 1:1 square centered on the video feed
-      const squareSize = Math.floor(Math.min(vw, vh) * 0.85);
-      const cropX = Math.floor((vw - squareSize) / 2);
-      const cropY = Math.floor((vh - squareSize) / 2);
-
+      // Capture full resolution without pre-cropping bottom edges
       const canvas = document.createElement('canvas');
-      canvas.width = squareSize;
-      canvas.height = squareSize;
+      canvas.width = vw;
+      canvas.height = vh;
       const ctx = canvas.getContext('2d');
 
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
-      ctx.drawImage(video, cropX, cropY, squareSize, squareSize, 0, 0, squareSize, squareSize);
+      ctx.drawImage(video, 0, 0, vw, vh);
 
       canvas.toBlob((blob) => {
         if (!blob) {
@@ -247,26 +239,9 @@ export default function TurntableScanner({ onComplete, email }) {
     const file = e.target.files[0];
     if (!file) return;
 
-    const img = new Image();
-    const tempUrl = URL.createObjectURL(file);
-    img.onload = () => {
-      const minDim = Math.min(img.width, img.height);
-      const startX = (img.width - minDim) / 2;
-      const startY = (img.height - minDim) / 2;
-
-      const canvas = document.createElement('canvas');
-      canvas.width = minDim;
-      canvas.height = minDim;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, startX, startY, minDim, minDim, 0, 0, minDim, minDim);
-
-      canvas.toBlob((blob) => {
-        const normalizedFile = new File([blob], `${currentPanel.id}.jpg`, { type: 'image/jpeg' });
-        const cleanUrl = URL.createObjectURL(blob);
-        savePanel(normalizedFile, cleanUrl);
-      }, 'image/jpeg', 0.98);
-    };
-    img.src = tempUrl;
+    const cleanUrl = URL.createObjectURL(file);
+    const normalizedFile = new File([file], `${currentPanel.id}.jpg`, { type: file.type || 'image/jpeg' });
+    savePanel(normalizedFile, cleanUrl);
   };
 
   const savePanel = (file, url) => {
@@ -371,7 +346,7 @@ export default function TurntableScanner({ onComplete, email }) {
             <Scan className="w-5 h-5 text-indigo-400 shrink-0" />
             <div>
               <h3 className="font-bold text-sm text-white">6-Axis Commodity Scanner</h3>
-              <p className="text-[11px] text-slate-400">High-Precision Square Optical Capture</p>
+              <p className="text-[11px] text-slate-400">High-Precision Optical Capture</p>
             </div>
           </div>
           {cameraActive && (
@@ -411,36 +386,36 @@ export default function TurntableScanner({ onComplete, email }) {
         </div>
       )}
 
-      {/* Viewport (Square 1:1 Aspect Frame) */}
-      <div className="w-full aspect-square max-w-[380px] mx-auto bg-slate-950 border border-slate-800 rounded-2xl relative overflow-hidden flex items-center justify-center shadow-inner">
+      {/* Viewport */}
+      <div className="w-full aspect-[4/3] sm:aspect-square max-w-[380px] mx-auto bg-slate-950 border border-slate-800 rounded-2xl relative overflow-hidden flex items-center justify-center shadow-inner">
         <video
           ref={videoRef}
           autoPlay
           playsInline
           muted
-          className={`absolute inset-0 w-full h-full object-cover ${cameraActive ? 'block' : 'hidden'}`}
+          className={`absolute inset-0 w-full h-full object-contain bg-black ${cameraActive ? 'block' : 'hidden'}`}
         />
 
         {cameraActive && (
-          <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-6 z-10">
-            {/* Square Bounding Target Reticle */}
+          <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-4 z-10">
+            {/* Guide Reticle */}
             <div
               style={{
-                transform: `translate(${(trackedCenter.x - 50) * 0.4}px, ${(trackedCenter.y - 50) * 0.4}px)`
+                transform: `translate(${(trackedCenter.x - 50) * 0.3}px, ${(trackedCenter.y - 50) * 0.3}px)`
               }}
-              className={`w-[85%] aspect-square border-2 rounded-2xl flex flex-col justify-between p-3 transition-all duration-200 relative ${
+              className={`w-[92%] h-[92%] border-2 rounded-xl flex flex-col justify-between p-3 transition-all duration-200 relative ${
                 isSnappingAnimation 
                   ? 'border-cyan-400 shadow-[0_0_35px_rgba(34,211,238,0.9)] bg-cyan-500/10' 
                   : isObjectDetected 
                   ? 'border-emerald-400 shadow-[0_0_20px_rgba(52,211,153,0.35)]' 
-                  : 'border-indigo-400 shadow-[0_0_0_9999px_rgba(0,0,0,0.55)]'
+                  : 'border-indigo-400/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]'
               }`}
             >
               {/* Corner Accents */}
-              <div className="absolute -top-2 -left-2 w-4 h-4 border-t-3 border-l-3 border-white rounded-tl-sm" />
-              <div className="absolute -top-2 -right-2 w-4 h-4 border-t-3 border-r-3 border-white rounded-tr-sm" />
-              <div className="absolute -bottom-2 -left-2 w-4 h-4 border-b-3 border-l-3 border-white rounded-bl-sm" />
-              <div className="absolute -bottom-2 -right-2 w-4 h-4 border-b-3 border-r-3 border-white rounded-br-sm" />
+              <div className="absolute -top-1 -left-1 w-4 h-4 border-t-2 border-l-2 border-white rounded-tl-sm" />
+              <div className="absolute -top-1 -right-1 w-4 h-4 border-t-2 border-r-2 border-white rounded-tr-sm" />
+              <div className="absolute -bottom-1 -left-1 w-4 h-4 border-b-2 border-l-2 border-white rounded-bl-sm" />
+              <div className="absolute -bottom-1 -right-1 w-4 h-4 border-b-2 border-r-2 border-white rounded-br-sm" />
 
               {/* Status Badge */}
               <div className="flex items-center justify-between">
@@ -463,19 +438,19 @@ export default function TurntableScanner({ onComplete, email }) {
               )}
 
               <div className="text-center text-[11px] font-semibold text-slate-100 bg-black/80 py-1 px-2 rounded-lg backdrop-blur-md border border-white/10">
-                {isSnappingAnimation ? 'Capturing High-Res Square...' : 'Fit object inside square frame'}
+                {isSnappingAnimation ? 'Capturing Full Resolution...' : 'Fit object inside frame'}
               </div>
             </div>
           </div>
         )}
 
-        {/* Clean Square Preview */}
+        {/* Clean Preview */}
         {!cameraActive && currentCapture && (
           <div className="relative w-full h-full flex flex-col items-center justify-center p-3 z-10 bg-slate-950">
             <img
               src={currentCapture.url}
               alt="Captured panel"
-              className="w-full h-full object-cover rounded-xl border border-slate-800 shadow-lg"
+              className="w-full h-full object-contain rounded-xl border border-slate-800 shadow-lg"
             />
             <div className="absolute bottom-4 left-4 right-4 bg-emerald-950/90 border border-emerald-600/80 backdrop-blur-md py-1.5 px-3 rounded-lg text-xs text-emerald-300 flex items-center justify-center gap-1.5 font-medium shadow-xl">
               <CheckCircle2 className="w-4 h-4 text-emerald-400" />
@@ -490,7 +465,7 @@ export default function TurntableScanner({ onComplete, email }) {
               <Camera className="w-7 h-7" />
             </div>
             <p className="text-xs font-semibold text-slate-200 text-center">{currentPanel.label}</p>
-            <p className="text-[11px] text-slate-500 text-center">Open camera to capture square panel</p>
+            <p className="text-[11px] text-slate-500 text-center">Open camera to capture panel</p>
           </div>
         )}
       </div>
@@ -535,7 +510,7 @@ export default function TurntableScanner({ onComplete, email }) {
             onClick={startCamera}
             className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-2.5 rounded-xl font-medium text-xs flex items-center justify-center gap-1.5 transition shadow-md shadow-indigo-600/20"
           >
-            <Video className="w-4 h-4" /> Start Square Camera
+            <Video className="w-4 h-4" /> Start Camera
           </button>
         ) : (
           <div className="flex gap-1.5 relative">
@@ -559,7 +534,7 @@ export default function TurntableScanner({ onComplete, email }) {
               <Camera className="w-4 h-4" />
               <span>
                 {isSnappingAnimation 
-                  ? 'Scanning Square Face...' 
+                  ? 'Scanning Face...' 
                   : `Snap ${currentPanel.id.toUpperCase()}`}
               </span>
             </button>
@@ -585,7 +560,7 @@ export default function TurntableScanner({ onComplete, email }) {
           onClick={() => fileInputRef.current.click()}
           className="w-full bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 py-2.5 rounded-xl font-medium text-xs flex items-center justify-center gap-1.5 transition"
         >
-          <Upload className="w-4 h-4 text-slate-400" /> Upload Square File
+          <Upload className="w-4 h-4 text-slate-400" /> Upload File
         </button>
       </div>
 
